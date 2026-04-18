@@ -69,7 +69,8 @@ class Amoeba {
 
     this.margin = 10;
 
-    this.swallowedBy = null; // reference to swallowing amoeba, or null
+    this.swallowedBy   = null; // reference to swallowing amoeba, or null
+    this._capturedDist = 0;   // maxDist at moment of capture, tightens each frame
   }
 
   update(dt) {
@@ -84,12 +85,15 @@ class Amoeba {
     this.y += this.vy * dt;
 
     if (this.swallowedBy) {
-      // Keep centre within a circle inside the swallower; cancel outward velocity at boundary
+      // Tighten the leash from capture distance toward the settled target each frame
       const sw = this.swallowedBy;
+      const target = sw.baseR * 0.35;
+      this._capturedDist = Math.max(target, this._capturedDist - sw.baseR * 0.08 * dt);
+      const maxDist = this._capturedDist;
+
       const dx = this.x - sw.x;
       const dy = this.y - sw.y;
       const dist = Math.hypot(dx, dy);
-      const maxDist = sw.baseR * 0.35;
       if (dist > maxDist && dist > 0) {
         this.x = sw.x + (dx / dist) * maxDist;
         this.y = sw.y + (dy / dist) * maxDist;
@@ -180,20 +184,25 @@ class Amoeba {
   }
 }
 
+function swallowDepth(a) {
+  let d = 0;
+  while (a.swallowedBy) { d++; a = a.swallowedBy; }
+  return d;
+}
+
 // Uses ctx path hit-testing (no draw) to detect when a smaller amoeba is fully
-// inside a larger one. Triggered once; swallowed state is permanent.
+// inside a larger one. Fully general: swallowed amoebas can swallow others.
 function checkSwallowing(amoebas, t) {
   for (const b of amoebas) {
-    if (b.swallowedBy) continue;
     for (const a of amoebas) {
-      if (a === b || a.swallowedBy) continue;
-      if (b.baseR >= a.baseR * 0.65) continue; // b must be meaningfully smaller
+      if (a === b || b.swallowedBy === a) continue;
+      if (b.baseR >= a.baseR * 0.85) continue;
 
-      // Build a's path on ctx (no stroke/fill), then hit-test b's centre + skeleton
       a._buildPath(a._points(t));
       const ptsB = b._points(t);
       if (ctx.isPointInPath(b.x, b.y) && ptsB.every(([px, py]) => ctx.isPointInPath(px, py))) {
-        b.swallowedBy = a;
+        b.swallowedBy   = a;
+        b._capturedDist = Math.hypot(b.x - a.x, b.y - a.y);
         break;
       }
     }
@@ -212,8 +221,8 @@ function frame(ts) {
 
   checkSwallowing(amoebas, t);
 
-  // Draw swallowed amoebas before their swallowers so they appear inside
-  const sorted = [...amoebas].sort((a, b) => (a.swallowedBy === b ? -1 : b.swallowedBy === a ? 1 : 0));
+  // Innermost amoebas draw first so they appear inside their swallowers
+  const sorted = [...amoebas].sort((a, b) => swallowDepth(b) - swallowDepth(a));
 
   for (const a of sorted) {
     a.update(dt);
