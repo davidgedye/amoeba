@@ -50,17 +50,14 @@ class Amoeba {
     const minDim = Math.min(W, H);
     this.baseR = minDim * (0.04 + Math.random() * 0.16);
 
-    // Start well inside the canvas
     this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
     this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
 
-    // Velocity — constant speed, direction wanders over time
-    this.speed = 45 + Math.random() * 45;
+    this.speed = Math.max(W, H) / (30 + Math.random() * 20); // crosses long dim in 30–50 s
     const angle = Math.random() * Math.PI * 2;
     this.vx = Math.cos(angle) * this.speed;
     this.vy = Math.sin(angle) * this.speed;
 
-    // Independent noise clock so amoebas don't sync up
     this.age = Math.random() * 200;
 
     this.N   = 8 + Math.floor(Math.random() * 4);
@@ -68,22 +65,17 @@ class Amoeba {
 
     this.rPhases    = Array.from({ length: this.N }, () => makePhases(4, 0.55));
     this.aPhases    = Array.from({ length: this.N }, () => makePhases(2, 0.12));
-    this.turnPhases = makePhases(3, 1); // drives the wandering heading
+    this.turnPhases = makePhases(3, 1);
 
-    // Bezier handle length ≈ |P_{i+2} − P_i| / 6 ≈ 0.15–0.20 × baseR for
-    // these shapes. Clamping control points this far inside the boundary means
-    // the curve overshoot carries the rendered edge to approximately x=0/W/y=0/H.
-    // Empirical: Bezier overshoot past a control point is roughly 8–12px for
-    // these shapes regardless of baseR. Clamp CPs that far inside the edge so
-    // the curve overshoot carries the visible line to approximately x=0/W/y=0/H.
     this.margin = 10;
+
+    this.swallowedBy = null; // reference to swallowing amoeba, or null
   }
 
   update(dt) {
     this.age += dt;
 
-    // Slowly rotate heading — gives gentle curves between bounces
-    const turnRate = sineNoise(this.turnPhases, this.age * 0.22) * 0.45; // rad/s
+    const turnRate = sineNoise(this.turnPhases, this.age * 0.22) * 0.45;
     const heading  = Math.atan2(this.vy, this.vx) + turnRate * dt;
     this.vx = Math.cos(heading) * this.speed;
     this.vy = Math.sin(heading) * this.speed;
@@ -91,36 +83,52 @@ class Amoeba {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    // Bounce threshold is low (0.3×) so the centre gets close to the wall
-    // and squishing has time to show before the direction reverses.
-    const r = this.baseR * 0.3;
-    if (this.x < r && this.vx < 0) {
-      this.vx = Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
-      this.vy += (Math.random() - 0.5) * this.speed * 0.3;
-    }
-    if (this.x > W - r && this.vx > 0) {
-      this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
-      this.vy += (Math.random() - 0.5) * this.speed * 0.3;
-    }
-    if (this.y < r && this.vy < 0) {
-      this.vy = Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
-      this.vx += (Math.random() - 0.5) * this.speed * 0.3;
-    }
-    if (this.y > H - r && this.vy > 0) {
-      this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
-      this.vx += (Math.random() - 0.5) * this.speed * 0.3;
-    }
+    if (this.swallowedBy) {
+      // Keep centre within a circle inside the swallower; cancel outward velocity at boundary
+      const sw = this.swallowedBy;
+      const dx = this.x - sw.x;
+      const dy = this.y - sw.y;
+      const dist = Math.hypot(dx, dy);
+      const maxDist = sw.baseR * 0.35;
+      if (dist > maxDist && dist > 0) {
+        this.x = sw.x + (dx / dist) * maxDist;
+        this.y = sw.y + (dy / dist) * maxDist;
+        const outward = this.vx * (dx / dist) + this.vy * (dy / dist);
+        if (outward > 0) {
+          this.vx -= outward * (dx / dist);
+          this.vy -= outward * (dy / dist);
+        }
+      }
+    } else {
+      // Bounce threshold is low (0.3×) so the centre gets close to the wall
+      // and squishing has time to show before the direction reverses.
+      const r = this.baseR * 0.3;
+      if (this.x < r && this.vx < 0) {
+        this.vx = Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
+        this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+      }
+      if (this.x > W - r && this.vx > 0) {
+        this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
+        this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+      }
+      if (this.y < r && this.vy < 0) {
+        this.vy = Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
+        this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+      }
+      if (this.y > H - r && this.vy > 0) {
+        this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
+        this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+      }
 
-    // Normalise speed back to target after scatter
-    const spd = Math.hypot(this.vx, this.vy);
-    if (spd > 0) {
-      this.vx = (this.vx / spd) * this.speed;
-      this.vy = (this.vy / spd) * this.speed;
-    }
+      const spd = Math.hypot(this.vx, this.vy);
+      if (spd > 0) {
+        this.vx = (this.vx / spd) * this.speed;
+        this.vy = (this.vy / spd) * this.speed;
+      }
 
-    // Keep centre from escaping entirely
-    this.x = Math.max(r, Math.min(W - r, this.x));
-    this.y = Math.max(r, Math.min(H - r, this.y));
+      this.x = Math.max(r, Math.min(W - r, this.x));
+      this.y = Math.max(r, Math.min(H - r, this.y));
+    }
   }
 
   _points(t) {
@@ -129,10 +137,6 @@ class Amoeba {
       const baseAngle = (i / this.N) * Math.PI * 2;
       const angle = baseAngle + sineNoise(this.aPhases[i], t * 0.35);
       const r     = this.baseR  * (1 + sineNoise(this.rPhases[i], t * 0.55));
-      // Clamp control points this.margin px inside each edge. The curve's
-      // Bezier overshoot (~equal to margin) then carries the rendered edge
-      // to approximately the canvas boundary — so flattening begins right
-      // as the visible curve first touches the wall, not before.
       const m  = this.margin;
       const px = Math.max(m, Math.min(W - m, this.x + Math.cos(angle) * r));
       const py = Math.max(m, Math.min(H - m, this.y + Math.sin(angle) * r));
@@ -162,11 +166,37 @@ class Amoeba {
   draw(t) {
     const pts = this._points(t);
     this._buildPath(pts);
-    ctx.fillStyle   = `hsla(${this.hue}, 65%, 60%, 0.30)`;
-    ctx.fill();
-    ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, 0.55)`;
-    ctx.lineWidth   = 2;
-    ctx.stroke();
+
+    if (this.swallowedBy) {
+      ctx.fillStyle = `hsla(${this.hue}, 65%, 20%, 0.60)`;
+      ctx.fill();
+    } else {
+      ctx.fillStyle   = `hsla(${this.hue}, 65%, 60%, 0.30)`;
+      ctx.fill();
+      ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, 0.55)`;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+// Uses ctx path hit-testing (no draw) to detect when a smaller amoeba is fully
+// inside a larger one. Triggered once; swallowed state is permanent.
+function checkSwallowing(amoebas, t) {
+  for (const b of amoebas) {
+    if (b.swallowedBy) continue;
+    for (const a of amoebas) {
+      if (a === b || a.swallowedBy) continue;
+      if (b.baseR >= a.baseR * 0.65) continue; // b must be meaningfully smaller
+
+      // Build a's path on ctx (no stroke/fill), then hit-test b's centre + skeleton
+      a._buildPath(a._points(t));
+      const ptsB = b._points(t);
+      if (ctx.isPointInPath(b.x, b.y) && ptsB.every(([px, py]) => ctx.isPointInPath(px, py))) {
+        b.swallowedBy = a;
+        break;
+      }
+    }
   }
 }
 
@@ -174,15 +204,22 @@ const amoebas = Array.from({ length: 10 }, () => new Amoeba());
 
 let lastTs = 0;
 function frame(ts) {
-  const dt = Math.min((ts - lastTs) / 1000, 0.05); // cap delta to avoid jump after tab switch
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
   const t = ts / 1000;
 
   ctx.clearRect(0, 0, W, H);
-  for (const a of amoebas) {
+
+  checkSwallowing(amoebas, t);
+
+  // Draw swallowed amoebas before their swallowers so they appear inside
+  const sorted = [...amoebas].sort((a, b) => (a.swallowedBy === b ? -1 : b.swallowedBy === a ? 1 : 0));
+
+  for (const a of sorted) {
     a.update(dt);
     a.draw(t);
   }
+
   requestAnimationFrame(frame);
 }
 
