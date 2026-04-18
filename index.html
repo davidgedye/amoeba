@@ -71,10 +71,12 @@ class Amoeba {
 
     this.swallowedBy   = null; // reference to swallowing amoeba, or null
     this._capturedDist = 0;   // maxDist at moment of capture, tightens each frame
+    this.opacity       = 1;   // 0→1 fade-in for newly spawned amoebas
   }
 
   update(dt) {
     this.age += dt;
+    if (this.opacity < 1) this.opacity = Math.min(1, this.opacity + dt / 2);
 
     const turnRate = sineNoise(this.turnPhases, this.age * 0.22) * 0.45;
     const heading  = Math.atan2(this.vy, this.vx) + turnRate * dt;
@@ -171,13 +173,14 @@ class Amoeba {
     const pts = this._points(t);
     this._buildPath(pts);
 
+    const o = this.opacity;
     if (this.swallowedBy) {
-      ctx.fillStyle = `hsla(${this.hue}, 65%, 20%, 0.60)`;
+      ctx.fillStyle = `hsla(${this.hue}, 65%, 20%, ${0.60 * o})`;
       ctx.fill();
     } else {
-      ctx.fillStyle   = `hsla(${this.hue}, 65%, 60%, 0.30)`;
+      ctx.fillStyle   = `hsla(${this.hue}, 65%, 60%, ${0.30 * o})`;
       ctx.fill();
-      ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, 0.55)`;
+      ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, ${0.55 * o})`;
       ctx.lineWidth   = 2;
       ctx.stroke();
     }
@@ -229,7 +232,9 @@ function frame(ts) {
   spawnCooldown = Math.max(0, spawnCooldown - dt);
   const freeCount = amoebas.filter(a => !a.swallowedBy).length;
   if (freeCount < initialCount * SPAWN_THRESHOLD && spawnCooldown === 0) {
-    amoebas.push(new Amoeba());
+    const spawned = new Amoeba();
+    spawned.opacity = 0;
+    amoebas.push(spawned);
     spawnCooldown = SPAWN_COOLDOWN;
   }
 
