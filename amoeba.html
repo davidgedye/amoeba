@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amoebas</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
+    canvas { display: block; position: fixed; top: 0; left: 0; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const TENSION = 8; // Catmull-Rom handle divisor: lower = rounder/loopier, higher = tighter
+
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function sineNoise(phases, t) {
+  let v = 0;
+  for (const [freq, amp, phase] of phases) {
+    v += Math.sin(t * freq + phase) * amp;
+  }
+  return v;
+}
+
+function makePhases(n, targetAmp) {
+  const raw = Array.from({ length: n }, () => ({
+    freq:  0.3 + Math.random() * 1.4,
+    amp:   0.4 + Math.random() * 0.6,
+    phase: Math.random() * Math.PI * 2,
+  }));
+  const total = raw.reduce((s, p) => s + p.amp, 0);
+  return raw.map(p => [p.freq, p.amp / total * targetAmp, p.phase]);
+}
+
+class Amoeba {
+  constructor() {
+    const minDim = Math.min(W, H);
+    this.baseR = minDim * (0.04 + Math.random() * 0.16);
+
+    // Start well inside the canvas
+    this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
+    this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
+
+    // Velocity — constant speed, direction wanders over time
+    this.speed = 45 + Math.random() * 45;
+    const angle = Math.random() * Math.PI * 2;
+    this.vx = Math.cos(angle) * this.speed;
+    this.vy = Math.sin(angle) * this.speed;
+
+    // Independent noise clock so amoebas don't sync up
+    this.age = Math.random() * 200;
+
+    this.N   = 8 + Math.floor(Math.random() * 4);
+    this.hue = Math.floor(Math.random() * 360);
+
+    this.rPhases    = Array.from({ length: this.N }, () => makePhases(4, 0.55));
+    this.aPhases    = Array.from({ length: this.N }, () => makePhases(2, 0.12));
+    this.turnPhases = makePhases(3, 1); // drives the wandering heading
+
+    // Bezier handle length ≈ |P_{i+2} − P_i| / 6 ≈ 0.15–0.20 × baseR for
+    // these shapes. Clamping control points this far inside the boundary means
+    // the curve overshoot carries the rendered edge to approximately x=0/W/y=0/H.
+    // Empirical: Bezier overshoot past a control point is roughly 8–12px for
+    // these shapes regardless of baseR. Clamp CPs that far inside the edge so
+    // the curve overshoot carries the visible line to approximately x=0/W/y=0/H.
+    this.margin = 10;
+  }
+
+  update(dt) {
+    this.age += dt;
+
+    // Slowly rotate heading — gives gentle curves between bounces
+    const turnRate = sineNoise(this.turnPhases, this.age * 0.22) * 0.45; // rad/s
+    const heading  = Math.atan2(this.vy, this.vx) + turnRate * dt;
+    this.vx = Math.cos(heading) * this.speed;
+    this.vy = Math.sin(heading) * this.speed;
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Bounce threshold is low (0.3×) so the centre gets close to the wall
+    // and squishing has time to show before the direction reverses.
+    const r = this.baseR * 0.3;
+    if (this.x < r && this.vx < 0) {
+      this.vx = Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
+      this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+    }
+    if (this.x > W - r && this.vx > 0) {
+      this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2);
+      this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+    }
+    if (this.y < r && this.vy < 0) {
+      this.vy = Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
+      this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+    }
+    if (this.y > H - r && this.vy > 0) {
+      this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2);
+      this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+    }
+
+    // Normalise speed back to target after scatter
+    const spd = Math.hypot(this.vx, this.vy);
+    if (spd > 0) {
+      this.vx = (this.vx / spd) * this.speed;
+      this.vy = (this.vy / spd) * this.speed;
+    }
+
+    // Keep centre from escaping entirely
+    this.x = Math.max(r, Math.min(W - r, this.x));
+    this.y = Math.max(r, Math.min(H - r, this.y));
+  }
+
+  _points(t) {
+    const pts = [];
+    for (let i = 0; i < this.N; i++) {
+      const baseAngle = (i / this.N) * Math.PI * 2;
+      const angle = baseAngle + sineNoise(this.aPhases[i], t * 0.35);
+      const r     = this.baseR  * (1 + sineNoise(this.rPhases[i], t * 0.55));
+      // Clamp control points this.margin px inside each edge. The curve's
+      // Bezier overshoot (~equal to margin) then carries the rendered edge
+      // to approximately the canvas boundary — so flattening begins right
+      // as the visible curve first touches the wall, not before.
+      const m  = this.margin;
+      const px = Math.max(m, Math.min(W - m, this.x + Math.cos(angle) * r));
+      const py = Math.max(m, Math.min(H - m, this.y + Math.sin(angle) * r));
+      pts.push([px, py]);
+    }
+    return pts;
+  }
+
+  _buildPath(pts) {
+    const n = pts.length;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n];
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % n];
+      const p3 = pts[(i + 2) % n];
+      if (i === 0) ctx.moveTo(p1[0], p1[1]);
+      const cp1x = p1[0] + (p2[0] - p0[0]) / TENSION;
+      const cp1y = p1[1] + (p2[1] - p0[1]) / TENSION;
+      const cp2x = p2[0] - (p3[0] - p1[0]) / TENSION;
+      const cp2y = p2[1] - (p3[1] - p1[1]) / TENSION;
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1]);
+    }
+    ctx.closePath();
+  }
+
+  draw(t) {
+    const pts = this._points(t);
+    this._buildPath(pts);
+    ctx.fillStyle   = `hsla(${this.hue}, 65%, 60%, 0.30)`;
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, 0.55)`;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+  }
+}
+
+const amoebas = Array.from({ length: 10 }, () => new Amoeba());
+
+let lastTs = 0;
+function frame(ts) {
+  const dt = Math.min((ts - lastTs) / 1000, 0.05); // cap delta to avoid jump after tab switch
+  lastTs = ts;
+  const t = ts / 1000;
+
+  ctx.clearRect(0, 0, W, H);
+  for (const a of amoebas) {
+    a.update(dt);
+    a.draw(t);
+  }
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
