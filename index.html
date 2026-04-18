@@ -238,8 +238,11 @@ function frame(ts) {
     spawnCooldown = SPAWN_COOLDOWN;
   }
 
-  // Innermost amoebas draw first so they appear inside their swallowers
-  const sorted = [...amoebas].sort((a, b) => swallowDepth(b) - swallowDepth(a));
+  // Innermost amoebas draw first; stable index tiebreak prevents flicker from order swaps
+  const sorted = amoebas
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => swallowDepth(y.a) - swallowDepth(x.a) || x.i - y.i)
+    .map(({ a }) => a);
 
   for (const a of sorted) {
     a.update(dt);
