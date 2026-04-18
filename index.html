@@ -209,7 +209,12 @@ function checkSwallowing(amoebas, t) {
   }
 }
 
+const SPAWN_THRESHOLD = 0.7; // spawn when free amoebas drop below this fraction of initial N
+const SPAWN_COOLDOWN  = 3;   // seconds between spawns
+
 const amoebas = Array.from({ length: 10 }, () => new Amoeba());
+const initialCount = amoebas.length;
+let spawnCooldown = 0;
 
 let lastTs = 0;
 function frame(ts) {
@@ -220,6 +225,13 @@ function frame(ts) {
   ctx.clearRect(0, 0, W, H);
 
   checkSwallowing(amoebas, t);
+
+  spawnCooldown = Math.max(0, spawnCooldown - dt);
+  const freeCount = amoebas.filter(a => !a.swallowedBy).length;
+  if (freeCount < initialCount * SPAWN_THRESHOLD && spawnCooldown === 0) {
+    amoebas.push(new Amoeba());
+    spawnCooldown = SPAWN_COOLDOWN;
+  }
 
   // Innermost amoebas draw first so they appear inside their swallowers
   const sorted = [...amoebas].sort((a, b) => swallowDepth(b) - swallowDepth(a));
