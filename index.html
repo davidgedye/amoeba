@@ -219,11 +219,37 @@ const amoebas = Array.from({ length: 10 }, () => new Amoeba());
 const initialCount = amoebas.length;
 let spawnCooldown = 0;
 
+let fps = 0;
+
+function drawHUD() {
+  const free  = amoebas.filter(a => !a.swallowedBy).length;
+  const total = amoebas.length;
+  const lines = [
+    `${Math.round(fps)} fps`,
+    `${free} / ${total} amoebas`,
+  ];
+  ctx.save();
+  ctx.font = '13px monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  const pad = 14;
+  const lineH = 18;
+  lines.forEach((line, i) => {
+    const y = H - pad - (lines.length - 1 - i) * lineH;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillText(line, W - pad + 2, y + 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText(line, W - pad, y);
+  });
+  ctx.restore();
+}
+
 let lastTs = 0;
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
   const t = ts / 1000;
+  fps += (1 / dt - fps) * 0.1; // exponential moving average
 
   ctx.clearRect(0, 0, W, H);
 
@@ -249,6 +275,7 @@ function frame(ts) {
     a.draw(t);
   }
 
+  drawHUD();
   requestAnimationFrame(frame);
 }
 
