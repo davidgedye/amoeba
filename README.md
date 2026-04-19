@@ -45,13 +45,25 @@ Once swallowed, B:
 
 When the number of free (unswallowed) amoebas drops below `SPAWN_THRESHOLD × initialCount`, a new amoeba is spawned at a random position and fades in over 2 seconds. A cooldown prevents burst spawning.
 
+## URL parameters
+
+These query-string parameters let you customise the simulation without editing the source:
+
+| Parameter | Default | Range | Effect |
+|-----------|---------|-------|--------|
+| `n` | 10 | 1 – 200 | Number of amoebas at startup |
+| `speed` | 1 | 0.1 – 20 | Multiplier on base speed (2 = twice as fast) |
+| `capture` | 0 | 0 / 1 / 2 | 0 = off; 1 = standard swallowing; 2 = swallow and grow (capturer gains the captured amoeba's area over 1 s) |
+
+Example: `?n=30&speed=0.5&capture=true`
+
 ## Parameters
 
 ### Population
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| Initial count | 10 | Number of amoebas at startup |
+| Initial count | `n` URL param (default 10) | Number of amoebas at startup |
 | `SPAWN_THRESHOLD` | 0.7 | Spawn a new amoeba when free count drops below this fraction of initial N |
 | `SPAWN_COOLDOWN` | 3 s | Minimum time between spawns |
 | Fade-in duration | 2 s | New spawns fade from invisible to full opacity |
@@ -98,7 +110,7 @@ Each skeleton point gets its own independent set of sinusoids.
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `speed` | `longDim / (30 – 50)` px/s | Scaled to screen; fastest amoeba crosses the long dimension in 30 s, slowest in 50 s |
+| `speed` | `longDim / (30 – 50) × SPEED_MUL` px/s | Scaled to screen; fastest amoeba crosses the long dimension in 30 s, slowest in 50 s (before the `speed` URL multiplier) |
 | `turnPhases` sinusoids | 3 | Waves driving heading rotation |
 | Turn rate | `age × 0.22`, amplitude `× 0.45` rad/s | Controls how tightly the heading wanders; low values → lazy curves |
 

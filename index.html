@@ -18,6 +18,11 @@ const ctx = canvas.getContext('2d');
 
 const TENSION = 8; // Catmull-Rom handle divisor: lower = rounder/loopier, higher = tighter
 
+const params  = new URLSearchParams(location.search);
+const INIT_N   = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 10));
+const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
+const CAPTURE  = Math.min(2, Math.max(0, parseInt(params.get('capture'), 10) || 0)); // 0=off 1=standard 2=grow
+
 let W, H;
 
 function resize() {
@@ -46,14 +51,14 @@ function makePhases(n, targetAmp) {
 }
 
 class Amoeba {
-  constructor() {
+  constructor(sizeT = Math.random()) {
     const minDim = Math.min(W, H);
-    this.baseR = minDim * (0.04 + Math.random() * 0.16);
+    this.baseR = minDim * (0.04 + sizeT * 0.16);
 
     this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
     this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
 
-    this.speed = Math.max(W, H) / (30 + Math.random() * 20); // crosses long dim in 30–50 s
+    this.speed = Math.max(W, H) / (30 + Math.random() * 20) * SPEED_MUL;
     const angle = Math.random() * Math.PI * 2;
     this.vx = Math.cos(angle) * this.speed;
     this.vy = Math.sin(angle) * this.speed;
@@ -72,11 +77,19 @@ class Amoeba {
     this.swallowedBy   = null; // reference to swallowing amoeba, or null
     this._capturedDist = 0;   // maxDist at moment of capture, tightens each frame
     this.opacity       = 1;   // 0→1 fade-in for newly spawned amoebas
+    this._pendingAreaGain = 0; // r² units still to be grown (mode 2)
+    this._growTarget      = this.baseR;
+    this._growRate        = 0;
   }
 
   update(dt) {
     this.age += dt;
     if (this.opacity < 1) this.opacity = Math.min(1, this.opacity + dt / 2);
+    if (this.baseR < this._growTarget) {
+      const prev = this.baseR;
+      this.baseR = Math.min(this._growTarget, this.baseR + this._growRate * dt);
+      this._pendingAreaGain = Math.max(0, this._pendingAreaGain - (this.baseR ** 2 - prev ** 2));
+    }
 
     const turnRate = sineNoise(this.turnPhases, this.age * 0.22) * 0.45;
     const heading  = Math.atan2(this.vy, this.vx) + turnRate * dt;
@@ -198,14 +211,19 @@ function swallowDepth(a) {
 function checkSwallowing(amoebas, t) {
   for (const b of amoebas) {
     for (const a of amoebas) {
-      if (a === b || b.swallowedBy === a) continue;
-      if (b.baseR >= a.baseR * 0.85) continue;
+      if (a === b || b.swallowedBy) continue;
 
       a._buildPath(a._points(t));
       const ptsB = b._points(t);
       if (ctx.isPointInPath(b.x, b.y) && ptsB.every(([px, py]) => ctx.isPointInPath(px, py))) {
         b.swallowedBy   = a;
         b._capturedDist = Math.hypot(b.x - a.x, b.y - a.y);
+        if (CAPTURE === 2) {
+          const maxR = Math.min(W, H) * 0.35;
+          a._pendingAreaGain += b.baseR ** 2;
+          a._growTarget = Math.min(maxR, Math.sqrt(a.baseR ** 2 + a._pendingAreaGain));
+          a._growRate   = (a._growTarget - a.baseR);
+        }
         break;
       }
     }
@@ -215,11 +233,19 @@ function checkSwallowing(amoebas, t) {
 const SPAWN_THRESHOLD = 0.7; // spawn when free amoebas drop below this fraction of initial N
 const SPAWN_COOLDOWN  = 3;   // seconds between spawns
 
-const amoebas = Array.from({ length: 10 }, () => new Amoeba());
+// Stratified sampling: one random draw per evenly-spaced bucket guarantees full size range
+const sizeBuckets = Array.from({ length: INIT_N }, (_, i) => (i + Math.random()) / INIT_N)
+  .sort(() => Math.random() - 0.5);
+const amoebas = sizeBuckets.map(t => new Amoeba(t));
 const initialCount = amoebas.length;
 let spawnCooldown = 0;
 
 let fps = 0;
+let diagnosticsOn = false;
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); diagnosticsOn = !diagnosticsOn; }
+});
 
 function drawHUD() {
   const free  = amoebas.filter(a => !a.swallowedBy).length;
@@ -244,6 +270,40 @@ function drawHUD() {
   ctx.restore();
 }
 
+function drawAmoebaDiagnostics(a, t) {
+  if (a.swallowedBy) return;
+  const pts = a._points(t);
+
+  // Control points
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,100,0.85)';
+  for (const [px, py] of pts) {
+    ctx.beginPath();
+    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Label lines
+  const lines = [
+    `R:${Math.round(a.baseR)}  N:${a.N}`,
+    `spd:${Math.round(a.speed)}  hue:${a.hue}`,
+    ...(a.opacity < 1 ? [`fade:${a.opacity.toFixed(2)}`] : []),
+  ];
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lineH = 14;
+  const totalH = lines.length * lineH;
+  lines.forEach((line, i) => {
+    const ly = a.y - totalH / 2 + i * lineH + lineH / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(line, a.x + 1, ly + 1);
+    ctx.fillStyle = 'rgba(255,255,180,0.95)';
+    ctx.fillText(line, a.x, ly);
+  });
+  ctx.restore();
+}
+
 let lastTs = 0;
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
@@ -253,11 +313,11 @@ function frame(ts) {
 
   ctx.clearRect(0, 0, W, H);
 
-  checkSwallowing(amoebas, t);
+  if (CAPTURE > 0) checkSwallowing(amoebas, t);
 
   spawnCooldown = Math.max(0, spawnCooldown - dt);
   const freeCount = amoebas.filter(a => !a.swallowedBy).length;
-  if (freeCount < initialCount * SPAWN_THRESHOLD && spawnCooldown === 0) {
+  if (CAPTURE < 2 && freeCount < initialCount * SPAWN_THRESHOLD && spawnCooldown === 0) {
     const spawned = new Amoeba();
     spawned.opacity = 0;
     amoebas.push(spawned);
@@ -275,7 +335,10 @@ function frame(ts) {
     a.draw(t);
   }
 
-  drawHUD();
+  if (diagnosticsOn) {
+    for (const a of sorted) drawAmoebaDiagnostics(a, t);
+    drawHUD();
+  }
   requestAnimationFrame(frame);
 }
 
