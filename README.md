@@ -1,6 +1,6 @@
 # Amoeba Soup
 
-A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. Larger amoebas can swallow smaller ones, which become trapped inside and drift around until the population drops low enough to trigger a new spawn.
+A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. With predation enabled, larger amoebas swallow smaller ones — which become trapped inside and grow their captor as they are absorbed.
 
 ## Approach
 
@@ -29,33 +29,31 @@ Each amoeba moves at a **constant speed** (scaled to screen size) in a slowly ro
 
 On reaching a wall the velocity component perpendicular to that wall is reflected, with a small random scatter applied to the parallel component — so bounces are not perfectly elastic and no two are alike. Speed is renormalised after each bounce to prevent drift.
 
-### Swallowing
+### Predation
 
-Each frame, `checkSwallowing` tests every pair of amoebas. If B is meaningfully smaller than A (`B.baseR < A.baseR × 0.85`) and all of B's skeleton points (plus its centre) lie inside A's Bézier path — tested via `ctx.isPointInPath` — B is swallowed by A.
+When `predation=true`, each frame `checkSwallowing` tests every unswallowed amoeba B against every amoeba A. If all of B's skeleton points (plus its centre) lie inside A's Bézier path — tested via `ctx.isPointInPath` — B is swallowed by A.
 
-Swallowing is fully general and supports chains: a swallowed amoeba can itself swallow a smaller one. Draw order is sorted by chain depth (innermost first) with a stable index tiebreak to prevent flicker.
+Once captured, B cannot be re-captured by any other amoeba, so area is never double-counted through chains.
+
+Swallowing supports chains: a swallowed amoeba can itself swallow a smaller one. Draw order is sorted by chain depth (innermost first) with a stable index tiebreak to prevent flicker.
 
 Once swallowed, B:
 - Stops bouncing off walls.
-- Is constrained within a shrinking circle around A's centre. The leash starts at the actual distance at the moment of capture (no jump) and tightens gradually to `0.35 × A.baseR` over a few seconds.
-- Renders with a darker, more opaque fill and no stroke, distinguishing it from free amoebas.
-- Moves with A as A drifts around.
-
-### Spawning
-
-When the number of free (unswallowed) amoebas drops below `SPAWN_THRESHOLD × initialCount`, a new amoeba is spawned at a random position and fades in over 2 seconds. A cooldown prevents burst spawning.
+- Is constrained within a shrinking circle around A's centre. The leash starts at the capture distance and tightens gradually to `0.35 × A.baseR` over a few seconds.
+- Renders with a darker, more opaque fill and no stroke.
+- Causes A to grow: A gains B's area (`B.baseR²` in r² units), smoothly expanding `A.baseR` toward the new target over ~1 s.
 
 ## URL parameters
 
 These query-string parameters let you customise the simulation without editing the source:
 
-| Parameter | Default | Range | Effect |
-|-----------|---------|-------|--------|
-| `n` | 10 | 1 – 200 | Number of amoebas at startup |
-| `speed` | 1 | 0.1 – 20 | Multiplier on base speed (2 = twice as fast) |
-| `capture` | 0 | 0 / 1 / 2 | 0 = off; 1 = standard swallowing; 2 = swallow and grow (capturer gains the captured amoeba's area over 1 s) |
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `n` | 10 | Number of amoebas (1 – 200) |
+| `speed` | 1 | Speed multiplier (0.1 – 20) |
+| `predation` | false | Enable swallowing and growth (`?predation=true`) |
 
-Example: `?n=30&speed=0.5&capture=true`
+Example: `?n=30&speed=0.5&predation=true`
 
 ## Parameters
 
@@ -64,8 +62,6 @@ Example: `?n=30&speed=0.5&capture=true`
 | Parameter | Value | Effect |
 |-----------|-------|--------|
 | Initial count | `n` URL param (default 10) | Number of amoebas at startup |
-| `SPAWN_THRESHOLD` | 0.7 | Spawn a new amoeba when free count drops below this fraction of initial N |
-| `SPAWN_COOLDOWN` | 3 s | Minimum time between spawns |
 | Fade-in duration | 2 s | New spawns fade from invisible to full opacity |
 
 ### Size
@@ -128,14 +124,14 @@ Each skeleton point gets its own independent set of sinusoids.
 |-----------|-------|--------|
 | `margin` | 10 px | Control points are clamped this far inside each edge. Bézier overshoot carries the rendered curve to approximately the canvas boundary |
 
-### Swallowing
+### Predation
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| Size threshold | `B.baseR < A.baseR × 0.85` | A must be more than ~18% larger than B to swallow it |
 | Detection | `ctx.isPointInPath` on B's centre + all N skeleton points | Uses the browser's own Bézier hit-testing; accurate to the actual rendered shape |
 | Leash target | `0.35 × A.baseR` | Settled radius within which B's centre is confined |
 | Leash tightening | `0.08 × A.baseR` per second | Rate at which the leash shrinks from capture distance to target; prevents a position jump on capture |
+| Growth | `A.baseR → √(A.baseR² + B.baseR²)` | Capturer gains B's area; `baseR` grows smoothly over ~1 s |
 
 ### Appearance
 

@@ -21,7 +21,7 @@ const TENSION = 8; // Catmull-Rom handle divisor: lower = rounder/loopier, highe
 const params  = new URLSearchParams(location.search);
 const INIT_N   = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 10));
 const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
-const CAPTURE  = Math.min(2, Math.max(0, parseInt(params.get('capture'), 10) || 0)); // 0=off 1=standard 2=grow
+const PREDATION = params.get('predation') === 'true';
 
 let W, H;
 
@@ -218,26 +218,19 @@ function checkSwallowing(amoebas, t) {
       if (ctx.isPointInPath(b.x, b.y) && ptsB.every(([px, py]) => ctx.isPointInPath(px, py))) {
         b.swallowedBy   = a;
         b._capturedDist = Math.hypot(b.x - a.x, b.y - a.y);
-        if (CAPTURE === 2) {
-          a._pendingAreaGain += b.baseR ** 2;
-          a._growTarget = Math.sqrt(a.baseR ** 2 + a._pendingAreaGain);
-          a._growRate   = (a._growTarget - a.baseR);
-        }
+        a._pendingAreaGain += b.baseR ** 2;
+        a._growTarget = Math.sqrt(a.baseR ** 2 + a._pendingAreaGain);
+        a._growRate   = (a._growTarget - a.baseR);
         break;
       }
     }
   }
 }
 
-const SPAWN_THRESHOLD = 0.7; // spawn when free amoebas drop below this fraction of initial N
-const SPAWN_COOLDOWN  = 3;   // seconds between spawns
-
 // Stratified sampling: one random draw per evenly-spaced bucket guarantees full size range
 const sizeBuckets = Array.from({ length: INIT_N }, (_, i) => (i + Math.random()) / INIT_N)
   .sort(() => Math.random() - 0.5);
 const amoebas = sizeBuckets.map(t => new Amoeba(t));
-const initialCount = amoebas.length;
-let spawnCooldown = 0;
 
 let fps = 0;
 let diagnosticsOn = false;
@@ -312,16 +305,7 @@ function frame(ts) {
 
   ctx.clearRect(0, 0, W, H);
 
-  if (CAPTURE > 0) checkSwallowing(amoebas, t);
-
-  spawnCooldown = Math.max(0, spawnCooldown - dt);
-  const freeCount = amoebas.filter(a => !a.swallowedBy).length;
-  if (CAPTURE < 2 && freeCount < initialCount * SPAWN_THRESHOLD && spawnCooldown === 0) {
-    const spawned = new Amoeba();
-    spawned.opacity = 0;
-    amoebas.push(spawned);
-    spawnCooldown = SPAWN_COOLDOWN;
-  }
+  if (PREDATION) checkSwallowing(amoebas, t);
 
   // Innermost amoebas draw first; stable index tiebreak prevents flicker from order swaps
   const sorted = amoebas
