@@ -219,9 +219,8 @@ function checkSwallowing(amoebas, t) {
         b.swallowedBy   = a;
         b._capturedDist = Math.hypot(b.x - a.x, b.y - a.y);
         if (CAPTURE === 2) {
-          const maxR = Math.min(W, H) * 0.35;
           a._pendingAreaGain += b.baseR ** 2;
-          a._growTarget = Math.min(maxR, Math.sqrt(a.baseR ** 2 + a._pendingAreaGain));
+          a._growTarget = Math.sqrt(a.baseR ** 2 + a._pendingAreaGain);
           a._growRate   = (a._growTarget - a.baseR);
         }
         break;
