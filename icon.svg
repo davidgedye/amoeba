@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <rect width="180" height="180" fill="#111111" rx="40"/>
+  <path d="M90,32 C118,28 148,52 150,82 C152,112 134,144 104,150 C74,156 44,138 36,108 C28,78 44,46 68,37 Z"
+        fill="hsla(200,65%,60%,0.35)" stroke="hsla(200,75%,78%,0.65)" stroke-width="3" fill-rule="evenodd"/>
+  <path d="M88,72 C103,67 120,78 122,94 C124,110 113,127 97,128 C81,129 66,118 65,102 C64,86 73,77 88,72 Z"
+        fill="hsla(60,65%,60%,0.45)" stroke="hsla(60,75%,78%,0.75)" stroke-width="2"/>
+</svg>

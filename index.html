@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Amoeba Soup</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Amoeba Soup">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
@@ -16,9 +21,12 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-const TENSION = 8;
-const MARGIN  = 10;
-const P       = 10; // skeleton control points per amoeba
+const TENSION       = 8;
+const MARGIN        = 10;
+const P             = 10;  // skeleton control points per amoeba
+const ENDGAME_FLASH = 10;  // seconds of edge-flashing before push
+const ENDGAME_PUSH  = 5;   // seconds of reverse-spring push
+const ENDGAME_DRIFT = 10;  // seconds of free drift before predation resumes
 
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
@@ -77,6 +85,7 @@ class Amoeba {
     this.aPhases    = Array.from({ length: P }, () => makePhases(2, 0.12));
     this.turnPhases = makePhases(3, 0.45); // pre-scaled; no * 0.45 needed at runtime
 
+    this._initialBaseR = this.baseR;
     this.swallowedBy   = null;
     this._capturedDist = 0;
     this._growTarget   = this.baseR;
@@ -94,10 +103,12 @@ class Amoeba {
   }
 
   update(dt) {
-    this.age += dt;
+    this.age += dt * globalSpeedMult;
 
     if (this.baseR < this._growTarget) {
       this.baseR = Math.min(this._growTarget, this.baseR + this._growRate * dt);
+    } else if (this.baseR > this._growTarget) {
+      this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult);
     }
 
     if (this.speed > this._baseSpeed) {
@@ -113,32 +124,51 @@ class Amoeba {
 
     if (this.swallowedBy) {
       const sw = this.swallowedBy;
-      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt);
-
-      const dx = this.x - sw.x, dy = this.y - sw.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > this._capturedDist && dist > 0) {
-        this.x = sw.x + (dx / dist) * this._capturedDist;
-        this.y = sw.y + (dy / dist) * this._capturedDist;
-        const outward = this.vx * (dx / dist) + this.vy * (dy / dist);
-        if (outward > 0) {
-          this.vx -= outward * (dx / dist);
-          this.vy -= outward * (dy / dist);
+      if (endgamePhase === 'push') {
+        // Reverse spring: enforce minimum distance, growing outward
+        this._capturedDist += sw.baseR * 0.3 * dt;
+        const dx = this.x - sw.x, dy = this.y - sw.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < this._capturedDist && dist > 0) {
+          this.x = sw.x + (dx / dist) * this._capturedDist;
+          this.y = sw.y + (dy / dist) * this._capturedDist;
+          const inward = this.vx * (-dx / dist) + this.vy * (-dy / dist);
+          if (inward > 0) { this.vx += inward * (dx / dist); this.vy += inward * (dy / dist); }
+        }
+        if (this._capturedDist > sw.baseR) {
+          const r = this._capturedBaseR;
+          sw._growTarget = Math.sqrt(Math.max(0, sw._growTarget ** 2 - r ** 2));
+          this.swallowedBy = null;
+        }
+      } else {
+        this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt);
+        const dx = this.x - sw.x, dy = this.y - sw.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > this._capturedDist && dist > 0) {
+          this.x = sw.x + (dx / dist) * this._capturedDist;
+          this.y = sw.y + (dy / dist) * this._capturedDist;
+          const outward = this.vx * (dx / dist) + this.vy * (dy / dist);
+          if (outward > 0) {
+            this.vx -= outward * (dx / dist);
+            this.vy -= outward * (dy / dist);
+          }
         }
       }
-    } else if (this !== dragTarget) {
-      // Bounce threshold 0.3× lets the body visibly squish before reversing
-      const r = this.baseR * 0.3;
-      if (this.x < r         && this.vx < 0) { this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
-      if (this.x > W - r     && this.vx > 0) { this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
-      if (this.y < r         && this.vy < 0) { this.vy =  Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
-      if (this.y > H - r     && this.vy > 0) { this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
+    } else {
+      if (this !== dragTarget) {
+        // Bounce threshold 0.3× lets the body visibly squish before reversing
+        const r = this.baseR * 0.3;
+        if (this.x < r         && this.vx < 0) { this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
+        if (this.x > W - r     && this.vx > 0) { this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
+        if (this.y < r         && this.vy < 0) { this.vy =  Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
+        if (this.y > H - r     && this.vy > 0) { this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
 
-      const spd = Math.hypot(this.vx, this.vy);
-      if (spd > 0) { this.vx = (this.vx / spd) * this.speed; this.vy = (this.vy / spd) * this.speed; }
+        const spd = Math.hypot(this.vx, this.vy);
+        if (spd > 0) { this.vx = (this.vx / spd) * this.speed; this.vy = (this.vy / spd) * this.speed; }
 
-      this.x = Math.max(r, Math.min(W - r, this.x));
-      this.y = Math.max(r, Math.min(H - r, this.y));
+        this.x = Math.max(r, Math.min(W - r, this.x));
+        this.y = Math.max(r, Math.min(H - r, this.y));
+      }
     }
   }
 
@@ -172,6 +202,13 @@ class Amoeba {
     if (this.swallowedBy) {
       ctx.fillStyle = this.fillCaptured;
       ctx.fill(this._path);
+      const showStroke = endgamePhase === 'push' ||
+        (endgamePhase === 'flash' && Math.sin(performance.now() / 1000 * Math.PI * 6 + this.hue) > 0);
+      if (showStroke) {
+        ctx.strokeStyle = this.strokeFree;
+        ctx.lineWidth   = 2;
+        ctx.stroke(this._path);
+      }
     } else {
       ctx.fillStyle   = this.fillFree;
       ctx.fill(this._path);
@@ -192,10 +229,11 @@ function checkSwallowing() {
       if (a === b) continue;
       if (ctx.isPointInPath(a._path, b.x, b.y) &&
           b._pts.every(([px, py]) => ctx.isPointInPath(a._path, px, py))) {
-        b.swallowedBy   = a;
-        b._capturedDist = Math.hypot(b.x - a.x, b.y - a.y);
-        a._growTarget   = Math.sqrt(a._growTarget ** 2 + b.baseR ** 2);
-        a._growRate     = a._growTarget - a.baseR;
+        b.swallowedBy    = a;
+        b._capturedDist  = Math.hypot(b.x - a.x, b.y - a.y);
+        b._capturedBaseR = b.baseR;
+        a._growTarget    = Math.sqrt(a._growTarget ** 2 + b.baseR ** 2);
+        a._growRate      = a._growTarget - a.baseR;
         break;
       }
     }
@@ -206,7 +244,11 @@ function checkSwallowing() {
 const amoebas  = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
 const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-place each frame
 
-let dragTarget  = null;
+let endgamePhase    = 'idle'; // 'idle' | 'flash' | 'push' | 'drift'
+let endgameTimer    = 0;
+let globalSpeedMult = SPEED_MUL;
+let simTime         = 0;
+let dragTarget      = null;
 let dragMx = 0, dragMy = 0;
 let dragOffsetX = 0, dragOffsetY = 0;
 let dragHistory = [];
@@ -262,20 +304,43 @@ window.addEventListener('keydown', e => {
   let factor = 0;
   if (e.key === '+' || e.key === '=') factor = 1.25;
   else if (e.key === '-')             factor = 0.8;
-  if (factor) for (const a of amoebas) { a._baseSpeed *= factor; a.speed *= factor; }
+  if (factor) {
+    globalSpeedMult *= factor;
+    for (const a of amoebas) { a._baseSpeed *= factor; a.speed *= factor; }
+  }
 });
 
 let lastTs = 0;
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
-  const t = ts / 1000;
+  simTime += dt * globalSpeedMult;
 
   ctx.clearRect(0, 0, W, H);
 
   if (dragTarget) { dragTarget.x = dragMx + dragOffsetX; dragTarget.y = dragMy + dragOffsetY; }
-  for (const a of amoebas) a.buildPoints(t);
-  if (PREDATION) checkSwallowing();
+  for (const a of amoebas) a.buildPoints(simTime);
+
+  if (PREDATION) {
+    if (endgamePhase === 'idle') {
+      const freeCount = amoebas.reduce((n, a) => n + (a.swallowedBy ? 0 : 1), 0);
+      if (freeCount === 1 && amoebas.length > 1) { endgamePhase = 'flash'; endgameTimer = 0; }
+      else checkSwallowing();
+    } else {
+      endgameTimer += dt;
+      if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
+        endgamePhase = 'push'; endgameTimer = 0;
+      } else if (endgamePhase === 'push' && endgameTimer >= ENDGAME_PUSH && amoebas.every(a => !a.swallowedBy)) {
+        endgamePhase = 'drift'; endgameTimer = 0;
+      } else if (endgamePhase === 'drift' && endgameTimer >= ENDGAME_DRIFT) {
+        for (const a of amoebas) {
+          const delta = a.baseR - a._initialBaseR;
+          if (Math.abs(delta) > 0.5) console.warn(`size drift: ${a._initialBaseR.toFixed(1)} → ${a.baseR.toFixed(1)} (Δ${delta.toFixed(2)})`);
+        }
+        endgamePhase = 'idle';
+      }
+    }
+  }
 
   for (const a of amoebas) {
     let d = 0, b = a;
@@ -292,6 +357,8 @@ function frame(ts) {
 }
 
 requestAnimationFrame(frame);
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
 </html>

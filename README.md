@@ -1,6 +1,6 @@
 # Amoeba Soup
 
-A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. With predation enabled, larger amoebas swallow smaller ones — which become trapped inside and grow their captor as they are absorbed.
+A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. With predation enabled, amoebas swallow one another when one fits entirely inside another — becoming trapped inside and growing their captor as they are absorbed.
 
 ## Approach
 
@@ -61,7 +61,7 @@ Click and drag any free (unswallowed) amoeba to move it. The amoeba's centre tra
 
 On release, the amoeba is thrown in the direction of the cursor's recent movement. Throw speed is proportional to how fast the cursor was moving (capped at 5× the amoeba's normal speed) and decays back to normal over roughly one to two seconds.
 
-If predation is enabled, dragging a free amoeba fully inside another will swallow it mid-drag.
+If predation is enabled, dragging triggers swallowing normally — you can drag a small amoeba into a larger one, or drag a large amoeba over a small one.
 
 ## Parameters
 
@@ -69,8 +69,7 @@ If predation is enabled, dragging a free amoeba fully inside another will swallo
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| Initial count | `n` URL param (default 10) | Number of amoebas at startup |
-| Fade-in duration | 2 s | New spawns fade from invisible to full opacity |
+| Initial count | `n` URL param (default 20) | Number of amoebas at startup |
 
 ### Size
 
