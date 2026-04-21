@@ -258,6 +258,13 @@ window.addEventListener('mouseup', () => {
   dragHistory = [];
 });
 
+window.addEventListener('keydown', e => {
+  let factor = 0;
+  if (e.key === '+' || e.key === '=') factor = 1.25;
+  else if (e.key === '-')             factor = 0.8;
+  if (factor) for (const a of amoebas) { a._baseSpeed *= factor; a.speed *= factor; }
+});
+
 let lastTs = 0;
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
