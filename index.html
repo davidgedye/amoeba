@@ -208,6 +208,7 @@ const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-
 
 let dragTarget  = null;
 let dragMx = 0, dragMy = 0;
+let dragOffsetX = 0, dragOffsetY = 0;
 let dragHistory = [];
 
 canvas.addEventListener('mousedown', e => {
@@ -222,6 +223,8 @@ canvas.addEventListener('mousedown', e => {
   if (best) {
     dragTarget = best;
     dragMx = mx; dragMy = my;
+    dragOffsetX = best.x - mx;
+    dragOffsetY = best.y - my;
     dragHistory = [{ x: mx, y: my, t: performance.now() }];
     e.preventDefault();
   }
@@ -263,7 +266,7 @@ function frame(ts) {
 
   ctx.clearRect(0, 0, W, H);
 
-  if (dragTarget) { dragTarget.x = dragMx; dragTarget.y = dragMy; }
+  if (dragTarget) { dragTarget.x = dragMx + dragOffsetX; dragTarget.y = dragMy + dragOffsetY; }
   for (const a of amoebas) a.buildPoints(t);
   if (PREDATION) checkSwallowing();
 
