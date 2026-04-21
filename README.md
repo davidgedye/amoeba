@@ -49,7 +49,7 @@ These query-string parameters let you customise the simulation without editing t
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `n` | 10 | Number of amoebas (1 – 200) |
+| `n` | 20 | Number of amoebas (1 – 200) |
 | `speed` | 1 | Speed multiplier (0.1 – 20) |
 | `predation` | true | Disable swallowing and growth (`?predation=false`) |
 
