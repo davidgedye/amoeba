@@ -70,7 +70,6 @@ class Amoeba {
     this.vy = Math.sin(angle) * this.speed;
 
     this.age = Math.random() * 200;
-    P   = 10;
     this.hue = Math.floor(Math.random() * 360);
 
     this.rPhases    = Array.from({ length: P }, () => makePhases(4, 0.55));
@@ -83,8 +82,14 @@ class Amoeba {
     this._growRate     = 0;
     this.depth         = 0;
 
-    this._pts  = null;
+    // Pre-allocate _pts so buildPoints() mutates in-place each frame
+    this._pts  = Array.from({ length: P }, () => [0, 0]);
     this._path = null;
+
+    // Cache colour strings — hue never changes so no need to rebuild each frame
+    this.fillCaptured = `hsla(${this.hue}, 65%, 20%, 0.60)`;
+    this.fillFree     = `hsla(${this.hue}, 65%, 60%, 0.30)`;
+    this.strokeFree   = `hsla(${this.hue}, 75%, 78%, 0.55)`;
   }
 
   update(dt) {
@@ -132,20 +137,17 @@ class Amoeba {
     }
   }
 
-  // Computes skeleton points and Path2D once per frame; cached as _pts / _path
+  // Computes skeleton points and Path2D once per frame; _pts mutated in-place
   buildPoints(t) {
-    const pts = [];
+    const pts = this._pts;
     for (let i = 0; i < P; i++) {
       const angle = (i / P) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35);
       const r     = this.baseR * (1 + sineNoise(this.rPhases[i], t * 0.55));
-      pts.push([
-        Math.max(MARGIN, Math.min(W - MARGIN, this.x + Math.cos(angle) * r)),
-        Math.max(MARGIN, Math.min(H - MARGIN, this.y + Math.sin(angle) * r)),
-      ]);
+      pts[i][0] = Math.max(MARGIN, Math.min(W - MARGIN, this.x + Math.cos(angle) * r));
+      pts[i][1] = Math.max(MARGIN, Math.min(H - MARGIN, this.y + Math.sin(angle) * r));
     }
-    this._pts = pts;
 
-    const n = pts.length;
+    const n = P;
     const path = new Path2D();
     for (let i = 0; i < n; i++) {
       const p0 = pts[(i - 1 + n) % n], p1 = pts[i];
@@ -163,12 +165,12 @@ class Amoeba {
 
   draw() {
     if (this.swallowedBy) {
-      ctx.fillStyle = `hsla(${this.hue}, 65%, 20%, 0.60)`;
+      ctx.fillStyle = this.fillCaptured;
       ctx.fill(this._path);
     } else {
-      ctx.fillStyle = `hsla(${this.hue}, 65%, 60%, 0.30)`;
+      ctx.fillStyle   = this.fillFree;
       ctx.fill(this._path);
-      ctx.strokeStyle = `hsla(${this.hue}, 75%, 78%, 0.55)`;
+      ctx.strokeStyle = this.strokeFree;
       ctx.lineWidth   = 2;
       ctx.stroke(this._path);
     }
@@ -196,7 +198,8 @@ function checkSwallowing() {
 }
 
 // Stratified sampling: one random draw per evenly-spaced bucket guarantees full size range
-const amoebas = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
+const amoebas  = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
+const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-place each frame
 
 let fps = 0;
 let diagnosticsOn = false;
@@ -323,15 +326,12 @@ function frame(ts) {
   }
 
   // Innermost amoebas draw first; stable index tiebreak prevents flicker
-  const sorted = amoebas
-    .map((a, i) => ({ a, i }))
-    .sort((x, y) => y.a.depth - x.a.depth || x.i - y.i)
-    .map(({ a }) => a);
+  sortBuf.sort((x, y) => y.a.depth - x.a.depth || x.i - y.i);
 
-  for (const a of sorted) { a.update(dt); a.draw(); }
+  for (const { a } of sortBuf) { a.update(dt); a.draw(); }
 
   if (diagnosticsOn) {
-    for (const a of sorted) drawAmoebaDiagnostics(a);
+    for (const { a } of sortBuf) drawAmoebaDiagnostics(a);
     drawHUD();
     drawNestingMinimap();
   }
