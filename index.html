@@ -18,6 +18,7 @@ const ctx = canvas.getContext('2d');
 
 const TENSION = 8;
 const MARGIN  = 10;
+const P       = 10; // skeleton control points per amoeba
 
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
@@ -69,11 +70,11 @@ class Amoeba {
     this.vy = Math.sin(angle) * this.speed;
 
     this.age = Math.random() * 200;
-    this.N   = 8 + Math.floor(Math.random() * 4);
+    P   = 10;
     this.hue = Math.floor(Math.random() * 360);
 
-    this.rPhases    = Array.from({ length: this.N }, () => makePhases(4, 0.55));
-    this.aPhases    = Array.from({ length: this.N }, () => makePhases(2, 0.12));
+    this.rPhases    = Array.from({ length: P }, () => makePhases(4, 0.55));
+    this.aPhases    = Array.from({ length: P }, () => makePhases(2, 0.12));
     this.turnPhases = makePhases(3, 0.45); // pre-scaled; no * 0.45 needed at runtime
 
     this.swallowedBy   = null;
@@ -134,8 +135,8 @@ class Amoeba {
   // Computes skeleton points and Path2D once per frame; cached as _pts / _path
   buildPoints(t) {
     const pts = [];
-    for (let i = 0; i < this.N; i++) {
-      const angle = (i / this.N) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35);
+    for (let i = 0; i < P; i++) {
+      const angle = (i / P) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35);
       const r     = this.baseR * (1 + sineNoise(this.rPhases[i], t * 0.55));
       pts.push([
         Math.max(MARGIN, Math.min(W - MARGIN, this.x + Math.cos(angle) * r)),
@@ -285,7 +286,7 @@ function drawAmoebaDiagnostics(a) {
   }
 
   const lines = [
-    `R:${Math.round(a.baseR)}  N:${a.N}`,
+    `R:${Math.round(a.baseR)}`,
     `spd:${Math.round(a.speed)}  hue:${a.hue}`,
   ];
   ctx.font = '11px monospace';

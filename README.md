@@ -6,7 +6,7 @@ A fullscreen canvas animation of blob-like creatures drifting, bouncing, and mor
 
 ### Shape generation
 
-Each amoeba has **N** evenly-spaced skeleton points arranged in a circle. At every frame, two kinds of noise perturb those points:
+Each amoeba has **p** evenly-spaced skeleton points arranged in a circle. At every frame, two kinds of noise perturb those points:
 
 - **Radial noise** — varies how far each point sits from the amoeba's centre.
 - **Angular noise** — varies the angular position of each point around the centre.
@@ -59,8 +59,8 @@ Example: `?n=30&speed=0.5&predation=false`
 
 Press **Space** to toggle a diagnostics overlay. While active:
 
-- **Per-amoeba labels** — each free amoeba displays its base radius (`R`), skeleton point count (`N`), speed, and hue at its centre.
-- **Control points** — the N skeleton points are shown as small yellow dots on each free amoeba's outline.
+- **Per-amoeba labels** — each free amoeba displays its base radius (`R`), speed, and hue at its centre.
+- **Control points** — the p skeleton points are shown as small yellow dots on each free amoeba's outline.
 - **HUD** (bottom-right) — current frame rate and live amoeba count (`free / total`).
 - **Nesting minimap** (top-left) — a compact schematic of the current predation tree. Each free amoeba is shown as a filled circle sized proportionally to its `baseR`; amoebas it has swallowed appear as smaller circles nested inside it, recursively. Colours match the canvas rendering. As predation progresses the minimap shrinks in count and the survivor's circle grows to reflect absorbed area.
 
@@ -77,13 +77,13 @@ Press **Space** to toggle a diagnostics overlay. While active:
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `baseR` | scaled so all N amoebas together cover ~25% of canvas area | Base radius; 5:1 size ratio (smallest ~20% of largest). The radius formula `minDim × (0.04 – 0.20)` is multiplied by a per-session scale factor derived from N and the canvas dimensions |
+| `baseR` | scaled so all N amoebas together cover ~25% of canvas area | Base radius; 5:1 size ratio (smallest ~20% of largest). The radius formula `minDim × (0.04 – 0.20)` is multiplied by a per-session scale factor derived from n and the canvas dimensions |
 
 ### Skeleton
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `N` | 8 – 11 (random integer) | Number of skeleton control points. More points → more potential lobes and folds |
+| `p` | 10 | Number of skeleton control points |
 
 ### Radial deformation (`rPhases`)
 
@@ -137,7 +137,7 @@ Each skeleton point gets its own independent set of sinusoids.
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| Detection | `ctx.isPointInPath` on B's centre + all N skeleton points | Uses the browser's own Bézier hit-testing; accurate to the actual rendered shape |
+| Detection | `ctx.isPointInPath` on B's centre + all p skeleton points | Uses the browser's own Bézier hit-testing; accurate to the actual rendered shape |
 | Leash target | `0.35 × A.baseR` | Settled radius within which B's centre is confined |
 | Leash tightening | `0.08 × A.baseR` per second | Rate at which the leash shrinks from capture distance to target; prevents a position jump on capture |
 | Growth | `A.baseR → √(A.baseR² + B.baseR²)` | Capturer gains B's area; `baseR` grows smoothly over ~1 s |
