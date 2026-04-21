@@ -21,7 +21,7 @@ const TENSION = 8; // Catmull-Rom handle divisor: lower = rounder/loopier, highe
 const params  = new URLSearchParams(location.search);
 const INIT_N   = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 10));
 const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
-const PREDATION = params.get('predation') === 'true';
+const PREDATION = params.get('predation') !== 'false';
 
 let W, H;
 
@@ -31,6 +31,10 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+
+// Scale initial radii so combined area ≈ 25% of canvas
+const _avgSqCoeff = 0.04**2 + 0.04*0.16 + 0.16**2/3; // E[(0.04+0.16t)²], t~U[0,1]
+const SIZE_SCALE = Math.sqrt(0.25 * W * H / (INIT_N * Math.PI * Math.min(W,H)**2 * _avgSqCoeff));
 
 function sineNoise(phases, t) {
   let v = 0;
@@ -53,7 +57,7 @@ function makePhases(n, targetAmp) {
 class Amoeba {
   constructor(sizeT = Math.random()) {
     const minDim = Math.min(W, H);
-    this.baseR = minDim * (0.04 + sizeT * 0.16);
+    this.baseR = minDim * SIZE_SCALE * (0.04 + sizeT * 0.16);
 
     this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
     this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
@@ -262,6 +266,60 @@ function drawHUD() {
   ctx.restore();
 }
 
+function drawNestingMinimap() {
+  const free = amoebas.filter(a => !a.swallowedBy);
+  if (free.length === 0) return;
+
+  // Build direct-children map
+  const children = new Map(amoebas.map(a => [a, []]));
+  for (const a of amoebas) {
+    if (a.swallowedBy) children.get(a.swallowedBy).push(a);
+  }
+
+  // Scale so the largest free amoeba displays at MAX_R pixels
+  const MAX_R = 40;
+  const mapScale = MAX_R / Math.max(...free.map(a => a.baseR));
+  const PAD = 14;
+
+  ctx.save();
+
+  function drawNode(a, x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, Math.max(r, 1.5), 0, Math.PI * 2);
+    if (a.swallowedBy) {
+      ctx.fillStyle = `hsla(${a.hue}, 65%, 20%, 0.60)`;
+    } else {
+      ctx.fillStyle   = `hsla(${a.hue}, 65%, 60%, 0.30)`;
+      ctx.strokeStyle = `hsla(${a.hue}, 75%, 78%, 0.55)`;
+      ctx.lineWidth = 1.5;
+    }
+    ctx.fill();
+    if (!a.swallowedBy) ctx.stroke();
+
+    const kids = children.get(a).slice().sort((b, c) => c.baseR - b.baseR);
+    if (kids.length === 1) {
+      drawNode(kids[0], x, y, kids[0].baseR * mapScale);
+    } else {
+      kids.forEach((kid, i) => {
+        const kr  = kid.baseR * mapScale;
+        const ang = (i / kids.length) * Math.PI * 2;
+        const d   = Math.max(0, r - kr) * 0.52;
+        drawNode(kid, x + Math.cos(ang) * d, y + Math.sin(ang) * d, kr);
+      });
+    }
+  }
+
+  const sortedFree = free.slice().sort((a, b) => b.baseR - a.baseR);
+  let x = PAD;
+  for (const a of sortedFree) {
+    const r = a.baseR * mapScale;
+    drawNode(a, x + r, PAD + MAX_R, r);
+    x += r * 2 + 5;
+  }
+
+  ctx.restore();
+}
+
 function drawAmoebaDiagnostics(a, t) {
   if (a.swallowedBy) return;
   const pts = a._points(t);
@@ -321,6 +379,7 @@ function frame(ts) {
   if (diagnosticsOn) {
     for (const a of sorted) drawAmoebaDiagnostics(a, t);
     drawHUD();
+    drawNestingMinimap();
   }
   requestAnimationFrame(frame);
 }

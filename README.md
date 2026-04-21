@@ -51,9 +51,18 @@ These query-string parameters let you customise the simulation without editing t
 |-----------|---------|--------|
 | `n` | 10 | Number of amoebas (1 – 200) |
 | `speed` | 1 | Speed multiplier (0.1 – 20) |
-| `predation` | false | Enable swallowing and growth (`?predation=true`) |
+| `predation` | true | Disable swallowing and growth (`?predation=false`) |
 
-Example: `?n=30&speed=0.5&predation=true`
+Example: `?n=30&speed=0.5&predation=false`
+
+## Diagnostics
+
+Press **Space** to toggle a diagnostics overlay. While active:
+
+- **Per-amoeba labels** — each free amoeba displays its base radius (`R`), skeleton point count (`N`), speed, and hue at its centre.
+- **Control points** — the N skeleton points are shown as small yellow dots on each free amoeba's outline.
+- **HUD** (bottom-right) — current frame rate and live amoeba count (`free / total`).
+- **Nesting minimap** (top-left) — a compact schematic of the current predation tree. Each free amoeba is shown as a filled circle sized proportionally to its `baseR`; amoebas it has swallowed appear as smaller circles nested inside it, recursively. Colours match the canvas rendering. As predation progresses the minimap shrinks in count and the survivor's circle grows to reflect absorbed area.
 
 ## Parameters
 
@@ -68,7 +77,7 @@ Example: `?n=30&speed=0.5&predation=true`
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `baseR` | `minDim × (0.04 – 0.20)` | Base radius; 5:1 size ratio (smallest ~20% of largest), scaled to shorter screen dimension |
+| `baseR` | scaled so all N amoebas together cover ~25% of canvas area | Base radius; 5:1 size ratio (smallest ~20% of largest). The radius formula `minDim × (0.04 – 0.20)` is multiplied by a per-session scale factor derived from N and the canvas dimensions |
 
 ### Skeleton
 
