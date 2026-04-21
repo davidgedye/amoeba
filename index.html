@@ -201,117 +201,12 @@ function checkSwallowing() {
 const amoebas  = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
 const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-place each frame
 
-let fps = 0;
-let diagnosticsOn = false;
-
-window.addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); diagnosticsOn = !diagnosticsOn; }
-});
-
-function drawHUD() {
-  const free  = amoebas.filter(a => !a.swallowedBy).length;
-  const lines = [`${Math.round(fps)} fps`, `${free} / ${amoebas.length} amoebas`];
-  ctx.save();
-  ctx.font = '13px monospace';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  const pad = 14, lineH = 18;
-  lines.forEach((line, i) => {
-    const y = H - pad - (lines.length - 1 - i) * lineH;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillText(line, W - pad + 2, y + 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText(line, W - pad, y);
-  });
-  ctx.restore();
-}
-
-function drawNestingMinimap() {
-  const free = amoebas.filter(a => !a.swallowedBy);
-  if (free.length === 0) return;
-
-  const children = new Map(amoebas.map(a => [a, []]));
-  for (const a of amoebas) {
-    if (a.swallowedBy) children.get(a.swallowedBy).push(a);
-  }
-
-  const MAX_R    = 40;
-  const mapScale = MAX_R / Math.max(...free.map(a => a.baseR));
-  const PAD      = 14;
-
-  ctx.save();
-
-  function drawNode(a, x, y, r) {
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(r, 1.5), 0, Math.PI * 2);
-    if (a.swallowedBy) {
-      ctx.fillStyle = `hsla(${a.hue}, 65%, 20%, 0.60)`;
-    } else {
-      ctx.fillStyle   = `hsla(${a.hue}, 65%, 60%, 0.30)`;
-      ctx.strokeStyle = `hsla(${a.hue}, 75%, 78%, 0.55)`;
-      ctx.lineWidth   = 1.5;
-    }
-    ctx.fill();
-    if (!a.swallowedBy) ctx.stroke();
-
-    const kids = children.get(a).slice().sort((b, c) => c.baseR - b.baseR);
-    if (kids.length === 1) {
-      drawNode(kids[0], x, y, kids[0].baseR * mapScale);
-    } else {
-      kids.forEach((kid, i) => {
-        const kr = kid.baseR * mapScale;
-        const ang = (i / kids.length) * Math.PI * 2;
-        drawNode(kid, x + Math.cos(ang) * Math.max(0, r - kr) * 0.52,
-                      y + Math.sin(ang) * Math.max(0, r - kr) * 0.52, kr);
-      });
-    }
-  }
-
-  let x = PAD;
-  for (const a of free.slice().sort((a, b) => b.baseR - a.baseR)) {
-    const r = a.baseR * mapScale;
-    drawNode(a, x + r, PAD + MAX_R, r);
-    x += r * 2 + 5;
-  }
-
-  ctx.restore();
-}
-
-function drawAmoebaDiagnostics(a) {
-  if (a.swallowedBy) return;
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,100,0.85)';
-  for (const [px, py] of a._pts) {
-    ctx.beginPath();
-    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  const lines = [
-    `R:${Math.round(a.baseR)}`,
-    `spd:${Math.round(a.speed)}  hue:${a.hue}`,
-  ];
-  ctx.font = '11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lineH = 14;
-  lines.forEach((line, i) => {
-    const ly = a.y + (i - lines.length / 2 + 0.5) * lineH;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(line, a.x + 1, ly + 1);
-    ctx.fillStyle = 'rgba(255,255,180,0.95)';
-    ctx.fillText(line, a.x, ly);
-  });
-  ctx.restore();
-}
 
 let lastTs = 0;
 function frame(ts) {
   const dt = Math.min((ts - lastTs) / 1000, 0.05);
   lastTs = ts;
   const t = ts / 1000;
-  fps += (1 / dt - fps) * 0.1;
 
   ctx.clearRect(0, 0, W, H);
 
@@ -330,11 +225,6 @@ function frame(ts) {
 
   for (const { a } of sortBuf) { a.update(dt); a.draw(); }
 
-  if (diagnosticsOn) {
-    for (const { a } of sortBuf) drawAmoebaDiagnostics(a);
-    drawHUD();
-    drawNestingMinimap();
-  }
   requestAnimationFrame(frame);
 }
 
