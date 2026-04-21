@@ -55,6 +55,14 @@ These query-string parameters let you customise the simulation without editing t
 
 Example: `?n=30&speed=0.5&predation=false`
 
+## Interaction
+
+Click and drag any free (unswallowed) amoeba to move it. The amoeba's centre tracks the cursor while preserving the offset from where you clicked, so there is no jump on pickup. Amoebas swallowed inside the dragged one continue to jiggle around its centre normally.
+
+On release, the amoeba is thrown in the direction of the cursor's recent movement. Throw speed is proportional to how fast the cursor was moving (capped at 5× the amoeba's normal speed) and decays back to normal over roughly one to two seconds.
+
+If predation is enabled, dragging a free amoeba fully inside another will swallow it mid-drag.
+
 ## Parameters
 
 ### Population
