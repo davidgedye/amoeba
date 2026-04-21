@@ -64,7 +64,8 @@ class Amoeba {
     this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
     this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
 
-    this.speed = Math.max(W, H) / (30 + Math.random() * 20) * SPEED_MUL;
+    this._baseSpeed = Math.max(W, H) / (30 + Math.random() * 20) * SPEED_MUL;
+    this.speed = this._baseSpeed;
     const angle = Math.random() * Math.PI * 2;
     this.vx = Math.cos(angle) * this.speed;
     this.vy = Math.sin(angle) * this.speed;
@@ -99,6 +100,10 @@ class Amoeba {
       this.baseR = Math.min(this._growTarget, this.baseR + this._growRate * dt);
     }
 
+    if (this.speed > this._baseSpeed) {
+      this.speed += (this._baseSpeed - this.speed) * Math.min(1, 1.5 * dt);
+    }
+
     const heading = Math.atan2(this.vy, this.vx) + sineNoise(this.turnPhases, this.age * 0.22) * dt;
     this.vx = Math.cos(heading) * this.speed;
     this.vy = Math.sin(heading) * this.speed;
@@ -121,7 +126,7 @@ class Amoeba {
           this.vy -= outward * (dy / dist);
         }
       }
-    } else {
+    } else if (this !== dragTarget) {
       // Bounce threshold 0.3× lets the body visibly squish before reversing
       const r = this.baseR * 0.3;
       if (this.x < r         && this.vx < 0) { this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
@@ -201,6 +206,54 @@ function checkSwallowing() {
 const amoebas  = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
 const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-place each frame
 
+let dragTarget  = null;
+let dragMx = 0, dragMy = 0;
+let dragHistory = [];
+
+canvas.addEventListener('mousedown', e => {
+  const mx = e.clientX, my = e.clientY;
+  let best = null;
+  for (const a of amoebas) {
+    if (a.swallowedBy) continue;
+    if (ctx.isPointInPath(a._path, mx, my)) {
+      if (!best || a.baseR < best.baseR) best = a;
+    }
+  }
+  if (best) {
+    dragTarget = best;
+    dragMx = mx; dragMy = my;
+    dragHistory = [{ x: mx, y: my, t: performance.now() }];
+    e.preventDefault();
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!dragTarget) return;
+  dragMx = e.clientX;
+  dragMy = e.clientY;
+  dragHistory.push({ x: dragMx, y: dragMy, t: performance.now() });
+  if (dragHistory.length > 15) dragHistory.shift();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!dragTarget) return;
+  const now = performance.now();
+  const recent = dragHistory.filter(h => now - h.t < 150);
+  if (recent.length >= 2) {
+    const first = recent[0], last = recent[recent.length - 1];
+    const dx = last.x - first.x, dy = last.y - first.y;
+    const d = Math.hypot(dx, dy);
+    const throwDt = (last.t - first.t) / 1000;
+    if (d > 2 && throwDt > 0) {
+      const throwSpd = Math.min(d / throwDt, dragTarget._baseSpeed * 5);
+      dragTarget.speed = throwSpd;
+      dragTarget.vx = (dx / d) * throwSpd;
+      dragTarget.vy = (dy / d) * throwSpd;
+    }
+  }
+  dragTarget = null;
+  dragHistory = [];
+});
 
 let lastTs = 0;
 function frame(ts) {
@@ -210,10 +263,10 @@ function frame(ts) {
 
   ctx.clearRect(0, 0, W, H);
 
+  if (dragTarget) { dragTarget.x = dragMx; dragTarget.y = dragMy; }
   for (const a of amoebas) a.buildPoints(t);
   if (PREDATION) checkSwallowing();
 
-  // Compute depth once per frame for sort and diagnostics
   for (const a of amoebas) {
     let d = 0, b = a;
     while (b.swallowedBy) { d++; b = b.swallowedBy; }
