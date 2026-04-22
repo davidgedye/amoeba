@@ -1,6 +1,6 @@
 # Amoeba Soup
 
-A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. With predation enabled, amoebas swallow one another when one fits entirely inside another — becoming trapped inside and growing their captor as they are absorbed.
+A fullscreen canvas animation of blob-like creatures drifting, bouncing, and morphing around the screen. Each amoeba is a closed cubic Bézier spline whose control points are driven by layered sine waves, giving them a continuously shifting, organic shape. With predation enabled, amoebas swallow one another when one fits entirely inside another — becoming trapped inside and growing their captor as they are absorbed. This continues to its logical conclusion, but then... a miracle occurs.
 
 ## Approach
 
