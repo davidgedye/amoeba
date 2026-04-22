@@ -55,6 +55,15 @@ These query-string parameters let you customise the simulation without editing t
 
 Example: `?n=30&speed=0.5&predation=false`
 
+## Endgame
+
+When predation is enabled and only one top-level (unswallowed) amoeba remains, the simulation enters an endgame sequence:
+
+1. **Flash** (10 s) — the edges of all captured amoebas flash at ~3 Hz.
+2. **Push** (≥ 5 s) — edges stay visible and a reverse spring pushes each captured amoeba outward until it escapes its captor. The captor shrinks as each child leaves, area-conserving. The push phase continues until every amoeba has escaped naturally.
+3. **Drift** (15 s) — all amoebas drift freely with predation suspended.
+4. **Idle** — predation resumes and captures can restart.
+
 ## Interaction
 
 Click and drag any free (unswallowed) amoeba to move it. The amoeba's centre tracks the cursor while preserving the offset from where you clicked, so there is no jump on pickup. Amoebas swallowed inside the dragged one continue to jiggle around its centre normally.
@@ -62,6 +71,8 @@ Click and drag any free (unswallowed) amoeba to move it. The amoeba's centre tra
 On release, the amoeba is thrown in the direction of the cursor's recent movement. Throw speed is proportional to how fast the cursor was moving (capped at 5× the amoeba's normal speed) and decays back to normal over roughly one to two seconds.
 
 If predation is enabled, dragging triggers swallowing normally — you can drag a small amoeba into a larger one, or drag a large amoeba over a small one.
+
+Press **+** / **-** to increase or decrease the global speed multiplier. This scales movement, shape animation, and turning together — identical in effect to the `?speed` URL parameter but adjustable at runtime.
 
 ## Parameters
 
@@ -147,7 +158,7 @@ Each skeleton point gets its own independent set of sinusoids.
 | `hue` | 0 – 359° (random) | Per-amoeba colour, fixed for its lifetime |
 | Free fill | `hsla(hue, 65%, 60%, 0.30)` | Semi-transparent; overlapping amoebas blend naturally |
 | Free stroke | `hsla(hue, 75%, 78%, 0.55)` | Brighter, slightly more opaque outline |
-| Swallowed fill | `hsla(hue, 65%, 20%, 0.60)` | Darker and more opaque; no stroke |
+| Swallowed fill | `hsla(hue, 65%, 20%, 0.60)` | Darker and more opaque; no stroke during normal predation (stroke shown during endgame flash and push phases) |
 | `lineWidth` | 2 px | Outline thickness |
 
 ### Timing
