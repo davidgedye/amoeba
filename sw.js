@@ -1,4 +1,4 @@
-const CACHE_NAME = 'amoeba-v3';
+const CACHE_NAME = 'amoeba-v4';
 const ASSETS = ['./index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

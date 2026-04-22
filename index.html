@@ -12,7 +12,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
-    canvas { display: block; position: fixed; top: 0; left: 0; }
+    canvas { display: block; position: fixed; top: 0; left: 0; touch-action: none; }
   </style>
 </head>
 <body>
@@ -253,7 +253,7 @@ let dragMx = 0, dragMy = 0;
 let dragOffsetX = 0, dragOffsetY = 0;
 let dragHistory = [];
 
-canvas.addEventListener('mousedown', e => {
+canvas.addEventListener('pointerdown', e => {
   const mx = e.clientX, my = e.clientY;
   let best = null;
   for (const a of amoebas) {
@@ -268,11 +268,12 @@ canvas.addEventListener('mousedown', e => {
     dragOffsetX = best.x - mx;
     dragOffsetY = best.y - my;
     dragHistory = [{ x: mx, y: my, t: performance.now() }];
+    canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
 });
 
-canvas.addEventListener('mousemove', e => {
+canvas.addEventListener('pointermove', e => {
   if (!dragTarget) return;
   dragMx = e.clientX;
   dragMy = e.clientY;
@@ -280,7 +281,7 @@ canvas.addEventListener('mousemove', e => {
   if (dragHistory.length > 15) dragHistory.shift();
 });
 
-window.addEventListener('mouseup', () => {
+canvas.addEventListener('pointerup', () => {
   if (!dragTarget) return;
   const now = performance.now();
   const recent = dragHistory.filter(h => now - h.t < 150);
