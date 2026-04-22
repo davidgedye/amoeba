@@ -26,7 +26,7 @@ const MARGIN        = 10;
 const P             = 10;  // skeleton control points per amoeba
 const ENDGAME_FLASH = 10;  // seconds of edge-flashing before push
 const ENDGAME_PUSH  = 5;   // seconds of reverse-spring push
-const ENDGAME_DRIFT = 10;  // seconds of free drift before predation resumes
+const ENDGAME_DRIFT = 15;  // seconds of free drift before predation resumes
 
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
