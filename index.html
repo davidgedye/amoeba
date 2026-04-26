@@ -200,6 +200,8 @@ class Amoeba {
 
   draw() {
     if (this.swallowedBy) {
+      ctx.save();
+      ctx.clip(this.swallowedBy._path);
       ctx.fillStyle = this.fillCaptured;
       ctx.fill(this._path);
       const showStroke = endgamePhase === 'push' ||
@@ -209,6 +211,7 @@ class Amoeba {
         ctx.lineWidth   = 2;
         ctx.stroke(this._path);
       }
+      ctx.restore();
     } else {
       ctx.fillStyle   = this.fillFree;
       ctx.fill(this._path);
