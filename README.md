@@ -35,14 +35,13 @@ When `predation=true`, each frame `checkSwallowing` tests every unswallowed amoe
 
 Once captured, B cannot be re-captured by any other amoeba, so area is never double-counted through chains.
 
-Nesting is always **single-level**: if the eating amoeba A is itself already swallowed by C, B (and any amoebas B was already holding) join C directly rather than forming a deeper chain. This keeps the containment graph flat.
+Swallowing supports chains: a swallowed amoeba can itself swallow a smaller one. Draw order is sorted by chain depth (innermost first) with a stable index tiebreak to prevent flicker.
 
 Once swallowed, B:
 - Stops bouncing off walls.
-- Is constrained within a shrinking circle around the captor's centre. The leash starts at the capture distance and tightens gradually to `0.35 × captor.baseR` over a few seconds.
-- Renders clipped to the captor's Bézier shape, with a darker, more opaque fill and no stroke, so it never visually bleeds outside its container.
-- Causes the captor to grow: the captor gains B's area (`B.baseR²` in r² units), smoothly expanding `baseR` toward the new target over ~1 s.
-- Shrinks back to its own original size if it was itself holding amoebas (which were reparented to the captor), animated over ~1 s.
+- Is constrained within a shrinking circle around A's centre. The leash starts at the capture distance and tightens gradually to `0.35 × A.baseR` over a few seconds.
+- Renders with a darker, more opaque fill and no stroke.
+- Causes A to grow: A gains B's area (`B.baseR²` in r² units), smoothly expanding `A.baseR` toward the new target over ~1 s.
 
 ## URL parameters
 
@@ -60,9 +59,10 @@ Example: `?n=30&speed=0.5&predation=false`
 
 When predation is enabled and only one top-level (unswallowed) amoeba remains, the simulation enters an endgame sequence:
 
-1. **Flash** (5 s) — the edges of all captured amoebas flash at ~3 Hz.
-2. **Drift** (15 s) — all captives are released at once with an outward burst of velocity; the container simultaneously shrinks back to its original size. Predation is suspended and all amoebas drift freely.
-3. **Idle** — predation resumes and captures can restart.
+1. **Flash** (10 s) — the edges of all captured amoebas flash at ~3 Hz.
+2. **Push** (≥ 5 s) — edges stay visible and a reverse spring pushes each captured amoeba outward until it escapes its captor. The captor shrinks as each child leaves, area-conserving. The push phase continues until every amoeba has escaped naturally.
+3. **Drift** (15 s) — all amoebas drift freely with predation suspended.
+4. **Idle** — predation resumes and captures can restart.
 
 ## Interaction
 
@@ -136,11 +136,11 @@ Each skeleton point gets its own independent set of sinusoids.
 | Speed multiplier on bounce | 0.9 – 1.1 | Slight speed jitter per bounce |
 | Lateral scatter | `±0.15 × speed` | Random nudge to the non-bouncing velocity component; prevents perfectly repeated paths |
 
-### Wall containment
+### Wall clamping
 
 | Parameter | Value | Effect |
 |-----------|-------|--------|
-| `margin` | 10 px | Skeleton points are kept this far inside each edge. When a point would exceed the margin it is **radially projected** — slid back along the centre→point ray to the boundary — rather than clamped per axis. This keeps adjacent points spread apart and prevents the coincident-point degeneracy that causes cusps at corners. Bézier overshoot carries the rendered curve to approximately the canvas boundary |
+| `margin` | 10 px | Control points are clamped this far inside each edge. Bézier overshoot carries the rendered curve to approximately the canvas boundary |
 
 ### Predation
 
