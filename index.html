@@ -24,7 +24,7 @@ const ctx = canvas.getContext('2d');
 const TENSION       = 8;
 const MARGIN        = 10;
 const P             = 10;  // skeleton control points per amoeba
-const ENDGAME_FLASH = 10;  // seconds of edge-flashing before push
+const ENDGAME_FLASH = 5;   // seconds of edge-flashing before release
 const ENDGAME_PUSH  = 5;   // seconds of reverse-spring push
 const ENDGAME_DRIFT = 15;  // seconds of free drift before predation resumes
 
@@ -178,8 +178,29 @@ class Amoeba {
     for (let i = 0; i < P; i++) {
       const angle = (i / P) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35);
       const r     = this.baseR * (1 + sineNoise(this.rPhases[i], t * 0.55));
-      pts[i][0] = Math.max(MARGIN, Math.min(W - MARGIN, this.x + Math.cos(angle) * r));
-      pts[i][1] = Math.max(MARGIN, Math.min(H - MARGIN, this.y + Math.sin(angle) * r));
+      let px = this.x + Math.cos(angle) * r;
+      let py = this.y + Math.sin(angle) * r;
+      if (px < MARGIN || px > W - MARGIN || py < MARGIN || py > H - MARGIN) {
+        // Radially project back to boundary along centre→point so adjacent points stay spread
+        // out rather than piling up at corners (which produces cusps)
+        const dx = px - this.x, dy = py - this.y;
+        let s = 1;
+        if (dx < 0) s = Math.min(s, (MARGIN     - this.x) / dx);
+        if (dx > 0) s = Math.min(s, (W - MARGIN - this.x) / dx);
+        if (dy < 0) s = Math.min(s, (MARGIN     - this.y) / dy);
+        if (dy > 0) s = Math.min(s, (H - MARGIN - this.y) / dy);
+        px = this.x + dx * s;
+        py = this.y + dy * s;
+      }
+      pts[i][0] = px;
+      pts[i][1] = py;
+    }
+
+    // During drift, no hit-testing or clipping needs Path2D — skip the allocation
+    // to avoid GC pressure that causes the post-explosion stutter.
+    if (endgamePhase === 'drift') {
+      this._path = null;
+      return;
     }
 
     const n = P;
@@ -199,7 +220,19 @@ class Amoeba {
   }
 
   draw() {
+    if (this._path === null) {
+      // drift phase: no Path2D — build the bezier directly on ctx
+      this._buildCtxPath();
+      ctx.fillStyle   = this.fillFree;
+      ctx.fill();
+      ctx.strokeStyle = this.strokeFree;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+      return;
+    }
     if (this.swallowedBy) {
+      ctx.save();
+      ctx.clip(this.swallowedBy._path);
       ctx.fillStyle = this.fillCaptured;
       ctx.fill(this._path);
       const showStroke = endgamePhase === 'push' ||
@@ -209,6 +242,7 @@ class Amoeba {
         ctx.lineWidth   = 2;
         ctx.stroke(this._path);
       }
+      ctx.restore();
     } else {
       ctx.fillStyle   = this.fillFree;
       ctx.fill(this._path);
@@ -217,11 +251,28 @@ class Amoeba {
       ctx.stroke(this._path);
     }
   }
+
+  _buildCtxPath() {
+    const pts = this._pts, n = P;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i];
+      const p2 = pts[(i + 1) % n],     p3 = pts[(i + 2) % n];
+      if (i === 0) ctx.moveTo(p1[0], p1[1]);
+      ctx.bezierCurveTo(
+        p1[0] + (p2[0] - p0[0]) / TENSION, p1[1] + (p2[1] - p0[1]) / TENSION,
+        p2[0] - (p3[0] - p1[0]) / TENSION, p2[1] - (p3[1] - p1[1]) / TENSION,
+        p2[0], p2[1],
+      );
+    }
+    ctx.closePath();
+  }
 }
 
 // Uses Path2D hit-testing to detect when a smaller amoeba is fully inside a larger one.
 // Paths are pre-built once per frame so no redundant _buildPath calls here.
-// Swallowed amoebas can swallow others, supporting chains.
+// Nesting is always flattened to one level: if the eating amoeba is itself captured,
+// the prey joins its captor directly, and any children the prey already held do too.
 function checkSwallowing() {
   for (const b of amoebas) {
     if (b.swallowedBy) continue;
@@ -229,11 +280,21 @@ function checkSwallowing() {
       if (a === b) continue;
       if (ctx.isPointInPath(a._path, b.x, b.y) &&
           b._pts.every(([px, py]) => ctx.isPointInPath(a._path, px, py))) {
-        b.swallowedBy    = a;
-        b._capturedDist  = Math.hypot(b.x - a.x, b.y - a.y);
-        b._capturedBaseR = b.baseR;
-        a._growTarget    = Math.sqrt(a._growTarget ** 2 + b.baseR ** 2);
-        a._growRate      = a._growTarget - a.baseR;
+        const captor = a.swallowedBy ?? a;
+        for (const inner of amoebas) {
+          if (inner.swallowedBy === b) {
+            inner.swallowedBy   = captor;
+            inner._capturedDist = Math.hypot(inner.x - captor.x, inner.y - captor.y);
+          }
+        }
+        b.swallowedBy    = captor;
+        b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
+        // b releases its children to captor, so it shrinks back to its own original size
+        b._growTarget    = b._initialBaseR;
+        b._growRate      = 0;
+        b._capturedBaseR = b._initialBaseR; // captor only recoups b's own mass at endgame release
+        captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b.baseR ** 2);
+        captor._growRate   = captor._growTarget - captor.baseR;
         break;
       }
     }
@@ -258,7 +319,7 @@ canvas.addEventListener('pointerdown', e => {
   let best = null;
   for (const a of amoebas) {
     if (a.swallowedBy) continue;
-    if (ctx.isPointInPath(a._path, mx, my)) {
+    if (a._path && ctx.isPointInPath(a._path, mx, my)) {
       if (!best || a.baseR < best.baseR) best = a;
     }
   }
@@ -330,14 +391,21 @@ function frame(ts) {
     } else {
       endgameTimer += dt;
       if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
-        endgamePhase = 'push'; endgameTimer = 0;
-      } else if (endgamePhase === 'push' && endgameTimer >= ENDGAME_PUSH && amoebas.every(a => !a.swallowedBy)) {
+        const container = amoebas.find(a => !a.swallowedBy);
+        for (const a of amoebas) {
+          if (a.swallowedBy && container) {
+            const dx = a.x - container.x, dy = a.y - container.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const burst = container.baseR * 1.5;
+            a.vx = (dx / dist) * burst;
+            a.vy = (dy / dist) * burst;
+            a.speed = burst;
+          }
+          a.swallowedBy = null;
+          if (a._growTarget > a._initialBaseR) { a._growTarget = a._initialBaseR; a._growRate = 0; }
+        }
         endgamePhase = 'drift'; endgameTimer = 0;
       } else if (endgamePhase === 'drift' && endgameTimer >= ENDGAME_DRIFT) {
-        for (const a of amoebas) {
-          const delta = a.baseR - a._initialBaseR;
-          if (Math.abs(delta) > 0.5) console.warn(`size drift: ${a._initialBaseR.toFixed(1)} → ${a.baseR.toFixed(1)} (Δ${delta.toFixed(2)})`);
-        }
         endgamePhase = 'idle';
       }
     }
