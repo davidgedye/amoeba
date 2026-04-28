@@ -21,8 +21,8 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-const TENSION       = 8;
-const MARGIN        = 10;
+const TENSION       = 8;   // Catmull-Rom handle divisor; higher = tighter curves, suppresses self-intersections
+const MARGIN        = 10;  // px — skeleton points are radially projected onto this inner boundary
 const P             = 10;  // skeleton control points per amoeba
 const ENDGAME_FLASH = 3;   // seconds of edge-flashing before ejection
 const ENDGAME_EJECT = 3;   // seconds over which all captives are ejected one by one
@@ -67,23 +67,23 @@ function makePhases(n, targetAmp) {
 class Amoeba {
   constructor(sizeT = Math.random()) {
     const minDim = Math.min(W, H);
-    this.baseR = minDim * SIZE_SCALE * (0.04 + sizeT * 0.16);
+    this.baseR = minDim * SIZE_SCALE * (0.04 + sizeT * 0.16); // size range: 4%–20% of min dimension
 
     this.x = this.baseR + Math.random() * (W - 2 * this.baseR);
     this.y = this.baseR + Math.random() * (H - 2 * this.baseR);
 
-    this._baseSpeed = Math.max(W, H) / (30 + Math.random() * 20) * SPEED_MUL;
+    this._baseSpeed = Math.max(W, H) / (30 + Math.random() * 20) * SPEED_MUL; // crosses long dim in 30–50 s
     this.speed = this._baseSpeed;
     const angle = Math.random() * Math.PI * 2;
     this.vx = Math.cos(angle) * this.speed;
     this.vy = Math.sin(angle) * this.speed;
 
-    this.age = Math.random() * 200;
+    this.age = Math.random() * 200; // random offset so amoebas don't pulse in sync
     this.hue = Math.floor(Math.random() * 360);
 
-    this.rPhases    = Array.from({ length: P }, () => makePhases(4, 0.55));
-    this.aPhases    = Array.from({ length: P }, () => makePhases(2, 0.12));
-    this.turnPhases = makePhases(3, 0.45); // pre-scaled; no * 0.45 needed at runtime
+    this.rPhases    = Array.from({ length: P }, () => makePhases(4, 0.55)); // 4 waves, ±55% radial swing
+    this.aPhases    = Array.from({ length: P }, () => makePhases(2, 0.12)); // 2 waves, ±0.12 rad angular swing; small to prevent skeleton crossings
+    this.turnPhases = makePhases(3, 0.45); // 3 waves driving heading rotation
 
     this._initialBaseR = this.baseR;
     this.swallowedBy   = null;
@@ -108,11 +108,11 @@ class Amoeba {
     if (this.baseR < this._growTarget) {
       this.baseR = Math.min(this._growTarget, this.baseR + this._growRate * dt);
     } else if (this.baseR > this._growTarget) {
-      this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult);
+      this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult); // ~0.2 s time constant
     }
 
     if (this.speed > this._baseSpeed) {
-      this.speed += (this._baseSpeed - this.speed) * Math.min(1, 1.5 * dt);
+      this.speed += (this._baseSpeed - this.speed) * Math.min(1, 1.5 * dt); // throw speed decays over ~0.7 s
     }
 
     const heading = Math.atan2(this.vy, this.vx) + sineNoise(this.turnPhases, this.age * 0.22) * dt;
@@ -124,7 +124,7 @@ class Amoeba {
 
     if (this.swallowedBy) {
       const sw = this.swallowedBy;
-      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt);
+      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt); // leash settles to 35% of captor radius
       const dx = this.x - sw.x, dy = this.y - sw.y;
       const dist = Math.hypot(dx, dy);
       if (dist > this._capturedDist && dist > 0) {
@@ -158,8 +158,8 @@ class Amoeba {
   buildPoints(t) {
     const pts = this._pts;
     for (let i = 0; i < P; i++) {
-      const angle = (i / P) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35);
-      const r     = this.baseR * (1 + sineNoise(this.rPhases[i], t * 0.55));
+      const angle = (i / P) * Math.PI * 2 + sineNoise(this.aPhases[i], t * 0.35); // 0.35: angular noise runs slower than radial
+      const r     = this.baseR * (1 + sineNoise(this.rPhases[i], t * 0.55));      // 0.55: radial noise clock speed
       pts[i][0] = Math.max(MARGIN, Math.min(W - MARGIN, this.x + Math.cos(angle) * r));
       pts[i][1] = Math.max(MARGIN, Math.min(H - MARGIN, this.y + Math.sin(angle) * r));
     }
@@ -348,11 +348,11 @@ function frame(ts) {
             const tcx = W / 2 - container.x, tcy = H / 2 - container.y;
             const tcLen = Math.hypot(tcx, tcy) || 1;
             const randAngle = Math.random() * Math.PI * 2;
-            let dx = Math.cos(randAngle) + (tcx / tcLen) * 0.7;
+            let dx = Math.cos(randAngle) + (tcx / tcLen) * 0.7; // 0.7: centre-bias strength (0 = pure random, 1 = always toward centre)
             let dy = Math.sin(randAngle) + (tcy / tcLen) * 0.7;
             const dLen = Math.hypot(dx, dy) || 1;
             dx /= dLen; dy /= dLen;
-            const burst = container.baseR * 5;
+            const burst = container.baseR * 5; // ejection speed relative to container size
             c.swallowedBy = null;
             c.vx = dx * burst; c.vy = dy * burst; c.speed = burst;
             container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._capturedBaseR ** 2));
