@@ -89,8 +89,6 @@ class Amoeba {
     this.swallowedBy   = null;
     this._capturedDist = 0;
     this._growTarget   = this.baseR;
-    this._growRate     = 0;
-    this.depth         = 0;
 
     // Pre-allocate _pts so buildPoints() mutates in-place each frame
     this._pts  = Array.from({ length: P }, () => [0, 0]);
@@ -105,11 +103,7 @@ class Amoeba {
   update(dt) {
     this.age += dt * globalSpeedMult;
 
-    if (this.baseR < this._growTarget) {
-      this.baseR = Math.min(this._growTarget, this.baseR + this._growRate * dt);
-    } else if (this.baseR > this._growTarget) {
-      this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult); // ~0.2 s time constant
-    }
+    this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult); // ~0.2 s time constant
 
     if (this.speed > this._baseSpeed) {
       this.speed += (this._baseSpeed - this.speed) * Math.min(1, 1.5 * dt); // throw speed decays over ~0.7 s
@@ -222,15 +216,13 @@ function checkSwallowing() {
           if (inner.swallowedBy === b) {
             inner.swallowedBy   = captor;
             inner._capturedDist = Math.hypot(inner.x - captor.x, inner.y - captor.y);
-            captor._growTarget  = Math.sqrt(captor._growTarget ** 2 + inner._capturedBaseR ** 2);
+            captor._growTarget  = Math.sqrt(captor._growTarget ** 2 + inner._initialBaseR ** 2);
           }
         }
         b.swallowedBy    = captor;
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
-        b._capturedBaseR = b._initialBaseR;
         b._growTarget    = b._initialBaseR;  // b shrinks back since its children left
         captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
-        captor._growRate   = captor._growTarget - captor.baseR;
         break;
       }
     }
@@ -355,7 +347,7 @@ function frame(ts) {
             const burst = container.baseR * 5; // ejection speed relative to container size
             c.swallowedBy = null;
             c.vx = dx * burst; c.vy = dy * burst; c.speed = burst;
-            container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._capturedBaseR ** 2));
+            container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._initialBaseR ** 2));
           }
         }
       } else if (endgamePhase === 'drift' && endgameTimer >= ENDGAME_DRIFT) {
@@ -364,14 +356,8 @@ function frame(ts) {
     }
   }
 
-  for (const a of amoebas) {
-    let d = 0, b = a;
-    while (b.swallowedBy) { d++; b = b.swallowedBy; }
-    a.depth = d;
-  }
-
-  // Innermost amoebas draw first; stable index tiebreak prevents flicker
-  sortBuf.sort((x, y) => y.a.depth - x.a.depth || x.i - y.i);
+  // Captured amoebas draw first (depth 1 before depth 0); stable index tiebreak prevents flicker
+  sortBuf.sort((x, y) => (y.a.swallowedBy ? 1 : 0) - (x.a.swallowedBy ? 1 : 0) || x.i - y.i);
 
   for (const { a } of sortBuf) { a.update(dt); a.draw(); }
 
