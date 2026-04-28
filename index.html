@@ -243,8 +243,10 @@ function checkSwallowing() {
         }
         b.swallowedBy    = captor;
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
-        b._capturedBaseR = b.baseR;
-        captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b.baseR ** 2);
+        // b's children were reparented, so only b's own original area counts
+        b._capturedBaseR = b._initialBaseR;
+        b._growTarget    = b._initialBaseR;  // b shrinks back to its own size
+        captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
         captor._growRate   = captor._growTarget - captor.baseR;
         break;
       }
