@@ -224,7 +224,8 @@ class Amoeba {
 
 // Uses Path2D hit-testing to detect when a smaller amoeba is fully inside a larger one.
 // Paths are pre-built once per frame so no redundant _buildPath calls here.
-// Swallowed amoebas can swallow others, supporting chains.
+// Nesting is always flat: if the eating amoeba is itself captured, the prey (and any
+// amoebas the prey was already holding) join the top-level captor directly.
 function checkSwallowing() {
   for (const b of amoebas) {
     if (b.swallowedBy) continue;
@@ -232,11 +233,19 @@ function checkSwallowing() {
       if (a === b) continue;
       if (ctx.isPointInPath(a._path, b.x, b.y) &&
           b._pts.every(([px, py]) => ctx.isPointInPath(a._path, px, py))) {
-        b.swallowedBy    = a;
-        b._capturedDist  = Math.hypot(b.x - a.x, b.y - a.y);
+        const captor = a.swallowedBy ?? a;
+        // Reparent anything b was already holding directly to captor
+        for (const inner of amoebas) {
+          if (inner.swallowedBy === b) {
+            inner.swallowedBy  = captor;
+            inner._capturedDist = Math.hypot(inner.x - captor.x, inner.y - captor.y);
+          }
+        }
+        b.swallowedBy    = captor;
+        b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
         b._capturedBaseR = b.baseR;
-        a._growTarget    = Math.sqrt(a._growTarget ** 2 + b.baseR ** 2);
-        a._growRate      = a._growTarget - a.baseR;
+        captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b.baseR ** 2);
+        captor._growRate   = captor._growTarget - captor.baseR;
         break;
       }
     }
