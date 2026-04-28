@@ -24,8 +24,8 @@ const ctx = canvas.getContext('2d');
 const TENSION       = 8;
 const MARGIN        = 10;
 const P             = 10;  // skeleton control points per amoeba
-const ENDGAME_FLASH = 10;  // seconds of edge-flashing before push
-const ENDGAME_PUSH  = 5;   // seconds of reverse-spring push
+const ENDGAME_FLASH = 3;   // seconds of edge-flashing before ejection
+const ENDGAME_EJECT = 5;   // seconds over which all captives are ejected one by one
 const ENDGAME_DRIFT = 15;  // seconds of free drift before predation resumes
 
 const params    = new URLSearchParams(location.search);
@@ -124,34 +124,16 @@ class Amoeba {
 
     if (this.swallowedBy) {
       const sw = this.swallowedBy;
-      if (endgamePhase === 'push') {
-        // Reverse spring: enforce minimum distance, growing outward
-        this._capturedDist += sw.baseR * 0.3 * dt;
-        const dx = this.x - sw.x, dy = this.y - sw.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < this._capturedDist && dist > 0) {
-          this.x = sw.x + (dx / dist) * this._capturedDist;
-          this.y = sw.y + (dy / dist) * this._capturedDist;
-          const inward = this.vx * (-dx / dist) + this.vy * (-dy / dist);
-          if (inward > 0) { this.vx += inward * (dx / dist); this.vy += inward * (dy / dist); }
-        }
-        if (this._capturedDist > sw.baseR) {
-          const r = this._capturedBaseR;
-          sw._growTarget = Math.sqrt(Math.max(0, sw._growTarget ** 2 - r ** 2));
-          this.swallowedBy = null;
-        }
-      } else {
-        this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt);
-        const dx = this.x - sw.x, dy = this.y - sw.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > this._capturedDist && dist > 0) {
-          this.x = sw.x + (dx / dist) * this._capturedDist;
-          this.y = sw.y + (dy / dist) * this._capturedDist;
-          const outward = this.vx * (dx / dist) + this.vy * (dy / dist);
-          if (outward > 0) {
-            this.vx -= outward * (dx / dist);
-            this.vy -= outward * (dy / dist);
-          }
+      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt);
+      const dx = this.x - sw.x, dy = this.y - sw.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > this._capturedDist && dist > 0) {
+        this.x = sw.x + (dx / dist) * this._capturedDist;
+        this.y = sw.y + (dy / dist) * this._capturedDist;
+        const outward = this.vx * (dx / dist) + this.vy * (dy / dist);
+        if (outward > 0) {
+          this.vx -= outward * (dx / dist);
+          this.vy -= outward * (dy / dist);
         }
       }
     } else {
@@ -204,7 +186,7 @@ class Amoeba {
       ctx.clip(this.swallowedBy._path);
       ctx.fillStyle = this.fillCaptured;
       ctx.fill(this._path);
-      const showStroke = endgamePhase === 'push' ||
+      const showStroke = endgamePhase === 'eject' ||
         (endgamePhase === 'flash' && Math.sin(performance.now() / 1000 * Math.PI * 6 + this.hue) > 0);
       if (showStroke) {
         ctx.strokeStyle = this.strokeFree;
@@ -258,8 +240,9 @@ function checkSwallowing() {
 const amoebas  = Array.from({ length: INIT_N }, (_, i) => new Amoeba((i + Math.random()) / INIT_N));
 const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-place each frame
 
-let endgamePhase    = 'idle'; // 'idle' | 'flash' | 'push' | 'drift'
+let endgamePhase    = 'idle'; // 'idle' | 'flash' | 'eject' | 'drift'
 let endgameTimer    = 0;
+let ejectTimer      = 0;  // counts up within eject phase; fires each captive at even intervals
 let globalSpeedMult = SPEED_MUL;
 let simTime         = 0;
 let dragTarget      = null;
@@ -344,14 +327,35 @@ function frame(ts) {
     } else {
       endgameTimer += dt;
       if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
-        endgamePhase = 'push'; endgameTimer = 0;
-      } else if (endgamePhase === 'push' && endgameTimer >= ENDGAME_PUSH && amoebas.every(a => !a.swallowedBy)) {
-        endgamePhase = 'drift'; endgameTimer = 0;
-      } else if (endgamePhase === 'drift' && endgameTimer >= ENDGAME_DRIFT) {
-        for (const a of amoebas) {
-          const delta = a.baseR - a._initialBaseR;
-          if (Math.abs(delta) > 0.5) console.warn(`size drift: ${a._initialBaseR.toFixed(1)} → ${a.baseR.toFixed(1)} (Δ${delta.toFixed(2)})`);
+        endgamePhase = 'eject'; endgameTimer = 0; ejectTimer = 0;
+      } else if (endgamePhase === 'eject') {
+        ejectTimer += dt;
+        const container  = amoebas.find(a => !a.swallowedBy);
+        const captives   = amoebas.filter(a => a.swallowedBy === container);
+        if (!container || captives.length === 0) {
+          endgamePhase = 'drift'; endgameTimer = 0;
+        } else {
+          // Spread all ejections evenly over ENDGAME_EJECT seconds
+          const interval = ENDGAME_EJECT / captives.length;
+          if (ejectTimer >= interval) {
+            ejectTimer -= interval;
+            const c = captives[Math.floor(Math.random() * captives.length)];
+            // Direction: random but biased toward canvas centre so corner containers
+            // don't fire captives straight into the wall
+            const tcx = W / 2 - container.x, tcy = H / 2 - container.y;
+            const tcLen = Math.hypot(tcx, tcy) || 1;
+            const randAngle = Math.random() * Math.PI * 2;
+            let dx = Math.cos(randAngle) + (tcx / tcLen) * 0.7;
+            let dy = Math.sin(randAngle) + (tcy / tcLen) * 0.7;
+            const dLen = Math.hypot(dx, dy) || 1;
+            dx /= dLen; dy /= dLen;
+            const burst = container.baseR * 2;
+            c.swallowedBy = null;
+            c.vx = dx * burst; c.vy = dy * burst; c.speed = burst;
+            container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._capturedBaseR ** 2));
+          }
         }
+      } else if (endgamePhase === 'drift' && endgameTimer >= ENDGAME_DRIFT) {
         endgamePhase = 'idle';
       }
     }
