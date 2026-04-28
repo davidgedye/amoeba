@@ -242,7 +242,8 @@ const sortBuf  = amoebas.map((a, i) => ({ a, i })); // pre-allocated; sorted in-
 
 let endgamePhase    = 'idle'; // 'idle' | 'flash' | 'eject' | 'drift'
 let endgameTimer    = 0;
-let ejectTimer      = 0;  // counts up within eject phase; fires each captive at even intervals
+let ejectTimer      = 0;      // counts up within eject phase; fires each captive at even intervals
+let ejectContainer  = null;  // the single free amoeba at the start of eject phase
 let globalSpeedMult = SPEED_MUL;
 let simTime         = 0;
 let dragTarget      = null;
@@ -328,10 +329,11 @@ function frame(ts) {
       endgameTimer += dt;
       if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
         endgamePhase = 'eject'; endgameTimer = 0; ejectTimer = 0;
+        ejectContainer = amoebas.find(a => !a.swallowedBy);
       } else if (endgamePhase === 'eject') {
         ejectTimer += dt;
-        const container  = amoebas.find(a => !a.swallowedBy);
-        const captives   = amoebas.filter(a => a.swallowedBy === container);
+        const container = ejectContainer;
+        const captives  = amoebas.filter(a => a.swallowedBy === container);
         if (!container || captives.length === 0) {
           endgamePhase = 'drift'; endgameTimer = 0;
         } else {
