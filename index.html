@@ -25,8 +25,8 @@ const TENSION       = 8;
 const MARGIN        = 10;
 const P             = 10;  // skeleton control points per amoeba
 const ENDGAME_FLASH = 3;   // seconds of edge-flashing before ejection
-const ENDGAME_EJECT = 5;   // seconds over which all captives are ejected one by one
-const ENDGAME_DRIFT = 15;  // seconds of free drift before predation resumes
+const ENDGAME_EJECT = 3;   // seconds over which all captives are ejected one by one
+const ENDGAME_DRIFT = 5;   // seconds of free drift before predation resumes
 
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
@@ -216,18 +216,19 @@ function checkSwallowing() {
       if (ctx.isPointInPath(a._path, b.x, b.y) &&
           b._pts.every(([px, py]) => ctx.isPointInPath(a._path, px, py))) {
         const captor = a.swallowedBy ?? a;
-        // Reparent anything b was already holding directly to captor
+        // Reparent anything b was already holding directly to captor,
+        // and credit each one's area to the captor so eject accounting stays balanced
         for (const inner of amoebas) {
           if (inner.swallowedBy === b) {
-            inner.swallowedBy  = captor;
+            inner.swallowedBy   = captor;
             inner._capturedDist = Math.hypot(inner.x - captor.x, inner.y - captor.y);
+            captor._growTarget  = Math.sqrt(captor._growTarget ** 2 + inner._capturedBaseR ** 2);
           }
         }
         b.swallowedBy    = captor;
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
-        // b's children were reparented, so only b's own original area counts
         b._capturedBaseR = b._initialBaseR;
-        b._growTarget    = b._initialBaseR;  // b shrinks back to its own size
+        b._growTarget    = b._initialBaseR;  // b shrinks back since its children left
         captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
         captor._growRate   = captor._growTarget - captor.baseR;
         break;
@@ -244,6 +245,7 @@ let endgamePhase    = 'idle'; // 'idle' | 'flash' | 'eject' | 'drift'
 let endgameTimer    = 0;
 let ejectTimer      = 0;      // counts up within eject phase; fires each captive at even intervals
 let ejectContainer  = null;  // the single free amoeba at the start of eject phase
+let ejectInterval   = 0;     // fixed interval between ejections (5 s / initial captive count)
 let globalSpeedMult = SPEED_MUL;
 let simTime         = 0;
 let dragTarget      = null;
@@ -330,6 +332,7 @@ function frame(ts) {
       if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
         endgamePhase = 'eject'; endgameTimer = 0; ejectTimer = 0;
         ejectContainer = amoebas.find(a => !a.swallowedBy);
+        ejectInterval  = ENDGAME_EJECT / Math.max(1, amoebas.filter(a => a.swallowedBy === ejectContainer).length);
       } else if (endgamePhase === 'eject') {
         ejectTimer += dt;
         const container = ejectContainer;
@@ -337,10 +340,8 @@ function frame(ts) {
         if (!container || captives.length === 0) {
           endgamePhase = 'drift'; endgameTimer = 0;
         } else {
-          // Spread all ejections evenly over ENDGAME_EJECT seconds
-          const interval = ENDGAME_EJECT / captives.length;
-          if (ejectTimer >= interval) {
-            ejectTimer -= interval;
+          if (ejectTimer >= ejectInterval) {
+            ejectTimer -= ejectInterval;
             const c = captives[Math.floor(Math.random() * captives.length)];
             // Direction: random but biased toward canvas centre so corner containers
             // don't fire captives straight into the wall
@@ -351,7 +352,7 @@ function frame(ts) {
             let dy = Math.sin(randAngle) + (tcy / tcLen) * 0.7;
             const dLen = Math.hypot(dx, dy) || 1;
             dx /= dLen; dy /= dLen;
-            const burst = container.baseR * 2;
+            const burst = container.baseR * 5;
             c.swallowedBy = null;
             c.vx = dx * burst; c.vy = dy * burst; c.speed = burst;
             container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._capturedBaseR ** 2));
