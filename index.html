@@ -31,6 +31,7 @@ const ENDGAME_DRIFT = 5;   // seconds of free drift before predation resumes
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
 const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
+const COVERAGE  = Math.max(0.01, Math.min(2, parseFloat(params.get('coverage')) || 0.25));
 const PREDATION = params.get('predation') !== 'false';
 
 let W, H;
@@ -44,7 +45,7 @@ window.addEventListener('resize', resize);
 
 // Scale initial radii so combined area ≈ 25% of canvas
 const _avgSqCoeff = 0.04**2 + 0.04*0.16 + 0.16**2/3; // E[(0.04+0.16t)²], t~U[0,1]
-const SIZE_SCALE  = Math.sqrt(0.25 * W * H / (INIT_N * Math.PI * Math.min(W,H)**2 * _avgSqCoeff));
+const SIZE_SCALE  = Math.sqrt(COVERAGE * W * H / (INIT_N * Math.PI * Math.min(W,H)**2 * _avgSqCoeff));
 
 function sineNoise(phases, t) {
   let v = 0;
