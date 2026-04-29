@@ -47,9 +47,10 @@ Once swallowed, B:
 |-----------|---------|--------|
 | `n` | 20 | Number of amoebas (1 – 200) |
 | `speed` | 1 | Speed multiplier |
+| `coverage` | 0.25 | Fraction of screen area notionally covered by all amoebas combined (0.01 – 2) |
 | `predation` | true | Disable swallowing and growth (`?predation=false`) |
 
-Example: `?n=30&speed=0.5&predation=false`
+Example: `?n=30&speed=0.5&coverage=0.4&predation=false`
 
 ## Endgame
 
