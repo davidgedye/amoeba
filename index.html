@@ -29,9 +29,9 @@ const ENDGAME_EJECT = 3;   // seconds over which all captives are ejected one by
 const ENDGAME_DRIFT = 5;   // seconds of free drift before predation resumes
 
 const params    = new URLSearchParams(location.search);
-const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 20));
+const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 40));
 const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
-const COVERAGE  = Math.max(0.01, Math.min(2, parseFloat(params.get('coverage')) || 0.25));
+const COVERAGE  = Math.max(0.01, Math.min(2, parseFloat(params.get('coverage')) || 0.5));
 const PREDATION = params.get('predation') !== 'false';
 
 let W, H;
