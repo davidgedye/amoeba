@@ -43,7 +43,11 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// Scale initial radii so combined area ≈ 25% of canvas
+// Scale initial radii so the sum of individual amoeba areas equals COVERAGE × canvas area.
+// This undercounts visual coverage at high density for two reasons: (1) overlapping amoebas
+// share pixels, so a pixel covered twice counts twice in the area sum but once on screen;
+// (2) large amoebas have their skeleton points clamped to the canvas boundary (see buildPoints),
+// flattening their sides and reducing their rendered area below π·r².
 const _avgSqCoeff = 0.04**2 + 0.04*0.16 + 0.16**2/3; // E[(0.04+0.16t)²], t~U[0,1]
 const SIZE_SCALE  = Math.sqrt(COVERAGE * W * H / (INIT_N * Math.PI * Math.min(W,H)**2 * _avgSqCoeff));
 
