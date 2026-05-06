@@ -23,6 +23,10 @@ v = Σ amp_k · sin(freq_k · t + phase_k)
 
 `makePhases(n, targetAmp)` generates `n` random sinusoids and normalises their amplitudes so the total contribution is exactly `targetAmp`, keeping shapes within a predictable size envelope.
 
+### Rendering
+
+Each amoeba is filled with a radial gradient — pale and translucent at the centre, more saturated toward the edge — giving a slight sense of depth. The inner stop's opacity breathes slowly on an independent per-amoeba sine cycle, so no two amoebas pulse in sync. Free and captured amoebas share the same approach but with different colour weights; captured amoebas are noticeably more opaque so they remain visible through their container.
+
 ### Motion
 
 Each amoeba moves at a **constant speed** (scaled to screen size) in a slowly rotating direction. Heading rotation is itself driven by a sine-noise signal, so straight-line travel, gentle arcs, and lazy loops all emerge naturally over time.
@@ -38,16 +42,16 @@ Nesting is always **flat**: if the eating amoeba A is itself already captured by
 Once swallowed, B:
 - Stops bouncing off walls.
 - Is constrained within a shrinking leash around the captor's centre, settling at a fraction of the captor's radius over a few seconds.
-- Renders clipped to the captor's Bézier shape, with a darker, more opaque fill and no stroke — it never bleeds outside its container.
+- Renders clipped to the captor's Bézier shape using a radial gradient (bright centre fading outward) — it never bleeds outside its container.
 - Causes the captor to grow by B's original area, smoothly expanding over time. If the captor is later swallowed by a larger amoeba, the captor's children are reparented and the captor shrinks back to its own original size.
 
 ## URL parameters
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `n` | 20 | Number of amoebas (1 – 200) |
+| `n` | 30 | Number of amoebas (1 – 200) |
 | `speed` | 1 | Speed multiplier |
-| `coverage` | 0.25 | Fraction of screen area notionally covered by all amoebas combined (0.01 – 2) |
+| `coverage` | 0.3 | Fraction of screen area notionally covered by all amoebas combined (0.01 – 2) |
 | `predation` | true | Disable swallowing and growth (`?predation=false`) |
 
 Example: `?n=30&speed=0.5&coverage=0.4&predation=false`

@@ -99,10 +99,8 @@ class Amoeba {
     this._pts  = Array.from({ length: P }, () => [0, 0]);
     this._path = null;
 
-    // Cache colour strings — hue never changes so no need to rebuild each frame
-    this.fillCaptured = `hsla(${this.hue}, 65%, 20%, 0.60)`;
-    this.fillFree     = `hsla(${this.hue}, 65%, 60%, 0.30)`;
-    this.strokeFree   = `hsla(${this.hue}, 75%, 78%, 0.55)`;
+    // Cache stroke string — hue never changes so no need to rebuild each frame
+    this.strokeFree = `hsla(${this.hue}, 75%, 78%, 0.55)`;
   }
 
   update(dt) {
@@ -123,7 +121,7 @@ class Amoeba {
 
     if (this.swallowedBy) {
       const sw = this.swallowedBy;
-      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.08 * dt); // leash settles to 35% of captor radius
+      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.06 * dt); // leash settles to 35% of captor radius
       const dx = this.x - sw.x, dy = this.y - sw.y;
       const dist = Math.hypot(dx, dy);
       if (dist > this._capturedDist && dist > 0) {
@@ -183,7 +181,11 @@ class Amoeba {
     if (this.swallowedBy) {
       ctx.save();
       ctx.clip(this.swallowedBy._path);
-      ctx.fillStyle = this.fillCaptured;
+      const capPulse = Math.sin(this.age * 1.6) * 0.06;
+      const cg = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.baseR * 1.3);
+      cg.addColorStop(0, `hsla(${this.hue}, 55%, 62%, ${(0.50 + capPulse).toFixed(3)})`);
+      cg.addColorStop(1, `hsla(${this.hue}, 65%, 28%, 0.28)`);
+      ctx.fillStyle = cg;
       ctx.fill(this._path);
       const showStroke = endgamePhase === 'eject' ||
         (endgamePhase === 'flash' && Math.sin(performance.now() / 1000 * Math.PI * 6 + this.hue) > 0);
@@ -194,7 +196,11 @@ class Amoeba {
       }
       ctx.restore();
     } else {
-      ctx.fillStyle   = this.fillFree;
+      const freePulse = Math.sin(this.age * 1.6) * 0.06;
+      const fg = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.baseR * 1.5);
+      fg.addColorStop(0, `hsla(${this.hue}, 45%, 88%, ${(0.20 + freePulse).toFixed(3)})`);
+      fg.addColorStop(1, `hsla(${this.hue}, 68%, 50%, 0.44)`);
+      ctx.fillStyle   = fg;
       ctx.fill(this._path);
       ctx.strokeStyle = this.strokeFree;
       ctx.lineWidth   = 2;
