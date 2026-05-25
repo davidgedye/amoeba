@@ -137,10 +137,22 @@ class Amoeba {
       if (this !== dragTarget) {
         // Bounce threshold 0.3× lets the body visibly squish before reversing
         const r = this.baseR * 0.3;
-        if (this.x < r         && this.vx < 0) { this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
-        if (this.x > W - r     && this.vx > 0) { this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3; }
-        if (this.y < r         && this.vy < 0) { this.vy =  Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
-        if (this.y > H - r     && this.vy > 0) { this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3; }
+        if (this.x < r         && this.vx < 0) {
+            if (audio_started) play('bloop');
+            this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+        }
+        if (this.x > W - r     && this.vx > 0) {
+            if (audio_started) play('bloop');
+            this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3;
+        }
+        if (this.y < r         && this.vy < 0) {
+            if (audio_started) play('bloop');
+            this.vy =  Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+        }
+        if (this.y > H - r     && this.vy > 0) {
+            if (audio_started) play('bloop');
+            this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3;
+        }
 
         const spd = Math.hypot(this.vx, this.vy);
         if (spd > 0) { this.vx = (this.vx / spd) * this.speed; this.vy = (this.vy / spd) * this.speed; }
@@ -231,6 +243,7 @@ function checkSwallowing() {
           }
         }
         b.swallowedBy    = captor;
+        if (audio_started) play('suck');
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
         b._growTarget    = b._initialBaseR;  // b shrinks back since its children left
         captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
@@ -274,6 +287,8 @@ canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
+  play('fumarole');
+  audio_started = true;
 });
 
 canvas.addEventListener('pointermove', e => {
@@ -337,6 +352,7 @@ function frame(ts) {
         ejectContainer = amoebas.find(a => !a.swallowedBy);
         ejectInterval  = ENDGAME_EJECT / Math.max(1, amoebas.filter(a => a.swallowedBy === ejectContainer).length);
       } else if (endgamePhase === 'eject') {
+        if (audio_started) play('pop');
         ejectTimer += dt;
         const container = ejectContainer;
         const captives  = amoebas.filter(a => a.swallowedBy === container);
@@ -378,6 +394,44 @@ function frame(ts) {
 requestAnimationFrame(frame);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+
+// AUDIO
+function play(id) {
+    const audio = document.getElementById(id);
+    if (audio.paused || audio.ended || audio.currentTime == 0) {
+        audio.play();
+    }
+}
+
+const sounds = [
+    ["bloop", "bloop.wav", false, 1.],
+    ["brook", "brook.mp3", true, .2],
+    ["pop", "pop.mp3", false, 1.],
+    ["suck", "suck.wav", false, .4],
+    ["fumarole", "fumarole.mp3", true, .4]
+];
+
+for (const [name, file, loop, vol] of sounds) {
+    aud = new Audio(file);
+    aud.id = name;
+    aud.loop = loop;
+    aud.volume = vol;
+    aud.paused = false;
+    document.body.appendChild(aud);
+}
+
+let audio_started = false;
+
+start_btn = document.createElement("button");
+start_btn.innerHTML = "Start";
+start_btn.addEventListener("click",
+    function() {
+        start_btn.hidden = true;
+        play("fumarole");
+    }
+);
+// END AUDIO
+
 </script>
 </body>
 </html>
