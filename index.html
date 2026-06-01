@@ -138,19 +138,15 @@ class Amoeba {
         // Bounce threshold 0.3× lets the body visibly squish before reversing
         const r = this.baseR * 0.3;
         if (this.x < r         && this.vx < 0) {
-            if (audio_started) play('bloop');
             this.vx =  Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3;
         }
         if (this.x > W - r     && this.vx > 0) {
-            if (audio_started) play('bloop');
             this.vx = -Math.abs(this.vx) * (0.9 + Math.random() * 0.2); this.vy += (Math.random() - 0.5) * this.speed * 0.3;
         }
         if (this.y < r         && this.vy < 0) {
-            if (audio_started) play('bloop');
             this.vy =  Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3;
         }
         if (this.y > H - r     && this.vy > 0) {
-            if (audio_started) play('bloop');
             this.vy = -Math.abs(this.vy) * (0.9 + Math.random() * 0.2); this.vx += (Math.random() - 0.5) * this.speed * 0.3;
         }
 
@@ -243,7 +239,7 @@ function checkSwallowing() {
           }
         }
         b.swallowedBy    = captor;
-        if (audio_started) play('suck');
+        if (audio_started) play('bloop');
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
         b._growTarget    = b._initialBaseR;  // b shrinks back since its children left
         captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
@@ -352,7 +348,6 @@ function frame(ts) {
         ejectContainer = amoebas.find(a => !a.swallowedBy);
         ejectInterval  = ENDGAME_EJECT / Math.max(1, amoebas.filter(a => a.swallowedBy === ejectContainer).length);
       } else if (endgamePhase === 'eject') {
-        if (audio_started) play('pop');
         ejectTimer += dt;
         const container = ejectContainer;
         const captives  = amoebas.filter(a => a.swallowedBy === container);
@@ -374,6 +369,15 @@ function frame(ts) {
             const burst = container.baseR * 5; // ejection speed relative to container size
             c.swallowedBy = null;
             c.vx = dx * burst; c.vy = dy * burst; c.speed = burst;
+            if (audio_started) {
+              const now = performance.now();
+              if (now - lastPopTime > 80) {
+                lastPopTime = now;
+                const p = document.getElementById('pop').cloneNode(true);
+                p.volume = 1.0;
+                p.play();
+              }
+            }
             container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._initialBaseR ** 2));
           }
         }
@@ -404,32 +408,32 @@ function play(id) {
 }
 
 const sounds = [
-    ["bloop", "bloop.wav", false, 1.],
+    ["bloop", "bloop.wav", false, .4],
     ["brook", "brook.mp3", true, .2],
     ["pop", "pop.mp3", false, 1.],
-    ["suck", "suck.wav", false, .4],
+
     ["fumarole", "fumarole.mp3", true, .4]
 ];
 
 for (const [name, file, loop, vol] of sounds) {
-    aud = new Audio(file);
+    const aud = new Audio(file);
     aud.id = name;
     aud.loop = loop;
     aud.volume = vol;
-    aud.paused = false;
     document.body.appendChild(aud);
 }
 
 let audio_started = false;
-
-start_btn = document.createElement("button");
-start_btn.innerHTML = "Start";
-start_btn.addEventListener("click",
-    function() {
-        start_btn.hidden = true;
-        play("fumarole");
+let lastPopTime = 0;
+document.addEventListener('visibilitychange', () => {
+    if (!audio_started) return;
+    const ambient = ['brook', 'fumarole'];
+    if (document.hidden) {
+        ambient.forEach(id => document.getElementById(id).pause());
+    } else {
+        ambient.forEach(id => document.getElementById(id).play());
     }
-);
+});
 // END AUDIO
 
 </script>
