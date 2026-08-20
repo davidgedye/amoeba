@@ -285,6 +285,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   play('fumarole');
   audio_started = true;
+  acquireWakeLock();
 });
 
 canvas.addEventListener('pointermove', e => {
@@ -435,6 +436,31 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 // END AUDIO
+
+// WAKE LOCK
+// Keeps the display awake while the page is visible, so the animation can be
+// left running unattended. Requires a secure context (https); silently does
+// nothing where unsupported or denied.
+let wakeLock = null;
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    // Cleared by the browser whenever the page is hidden, so drop our handle
+    // too and let visibilitychange below re-acquire it.
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch {
+    wakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) acquireWakeLock();
+});
+
+acquireWakeLock();
+// END WAKE LOCK
 
 </script>
 </body>
