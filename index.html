@@ -13,10 +13,52 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
     canvas { display: block; position: fixed; top: 0; left: 0; touch-action: none; }
+
+    /* A soft blob that drifts up, breathes for a few seconds, and leaves. It never
+       takes pointer events, so the very click it asks for still reaches the canvas. */
+    #hint {
+      position: fixed;
+      left: 50%;
+      bottom: 14%;
+      transform: translate(-50%, 0);
+      padding: 0.85em 1.7em;
+      font: 500 clamp(14px, 2.6vw, 19px)/1 ui-rounded, -apple-system, "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0.015em;
+      white-space: nowrap;
+      color: hsla(0, 0%, 100%, 0.9);
+      background: hsla(185, 65%, 55%, 0.13);
+      border: 1px solid hsla(185, 75%, 80%, 0.3);
+      box-shadow: 0 0 40px hsla(185, 70%, 60%, 0.12);
+      backdrop-filter: blur(7px);
+      -webkit-backdrop-filter: blur(7px);
+      pointer-events: none;
+      opacity: 0;
+      border-radius: 48% 52% 55% 45% / 55% 48% 52% 45%;
+      animation: hint-drift 6.5s ease-in-out 0.9s forwards,
+                 hint-wobble 7s ease-in-out infinite;
+    }
+    @keyframes hint-drift {
+      0%          { opacity: 0; transform: translate(-50%, 14px) scale(0.96); }
+      10%, 78%    { opacity: 1; transform: translate(-50%, 0)    scale(1); }
+      100%        { opacity: 0; transform: translate(-50%, -10px) scale(1.03); }
+    }
+    /* Morphing the corner radii is the cheapest way to make a div squirm like a cell */
+    @keyframes hint-wobble {
+      0%, 100% { border-radius: 48% 52% 55% 45% / 55% 48% 52% 45%; }
+      33%      { border-radius: 57% 43% 46% 54% / 44% 57% 43% 56%; }
+      66%      { border-radius: 44% 56% 53% 47% / 53% 44% 56% 47%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #hint { animation: hint-drift 6.5s ease-in-out 0.9s forwards; border-radius: 2em; }
+      @keyframes hint-drift {
+        0% { opacity: 0; } 10%, 78% { opacity: 1; } 100% { opacity: 0; }
+      }
+    }
   </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="hint">click to hear the soup</div>
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -283,8 +325,6 @@ canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
-  play('fumarole');
-  audio_started = true;
   acquireWakeLock();
 });
 
@@ -376,7 +416,7 @@ function frame(ts) {
                 lastPopTime = now;
                 const p = document.getElementById('pop').cloneNode(true);
                 p.volume = 1.0;
-                p.play();
+                p.play().catch(() => {});
               }
             }
             container._growTarget = Math.sqrt(Math.max(0, container._growTarget ** 2 - c._initialBaseR ** 2));
@@ -404,7 +444,10 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 function play(id) {
     const audio = document.getElementById(id);
     if (audio.paused || audio.ended || audio.currentTime == 0) {
-        audio.play();
+        // play() rejects if the browser blocks it, or if an earlier call on the
+        // same element is still settling. Swallow it: an unhandled rejection here
+        // is what made a missing track look like nothing happening at all.
+        audio.play().catch(() => {});
     }
 }
 
@@ -421,18 +464,64 @@ for (const [name, file, loop, vol] of sounds) {
     aud.id = name;
     aud.loop = loop;
     aud.volume = vol;
+    // Without this the browser fetches only metadata, so the first play() waits
+    // on a 1.4 MB download before it makes a sound.
+    aud.preload = 'auto';
     document.body.appendChild(aud);
 }
 
 let audio_started = false;
 let lastPopTime = 0;
+
+// Browsers refuse to play sound until the user has interacted with the page, so
+// the soup is silent until then no matter what we do. Try immediately anyway —
+// that succeeds in an installed PWA, or where this site already has audio
+// engagement — and otherwise start on the first gesture of ANY kind rather than
+// only a click on the canvas. play() must be called synchronously inside the
+// gesture handler for the browser to count it.
+function dismissHint() {
+  document.getElementById('hint')?.remove();
+}
+
+function startAudio() {
+  if (audio_started) return Promise.resolve(true);
+  return document.getElementById('fumarole').play().then(() => {
+    audio_started = true;
+    play('brook');
+    dismissHint();
+    return true;
+  }).catch(() => false);
+}
+
+const GESTURES = ['pointerdown', 'keydown', 'touchstart'];
+function onGesture() {
+  dismissHint(); // they interacted; the nudge has done its job either way
+  startAudio().then(started => {
+    if (started) GESTURES.forEach(g => window.removeEventListener(g, onGesture));
+  });
+}
+GESTURES.forEach(g => window.addEventListener(g, onGesture));
+
+// ?hint skips the opening autoplay attempt, so the page behaves like a browser
+// that blocks sound and the nudge actually appears. Some browsers (Edge with
+// media autoplay set to Allow) never block, and so never show it otherwise.
+if (!params.has('hint')) startAudio();
+
+// Touch devices get told to tap; tidy the element away once it has played out.
+const hintEl = document.getElementById('hint');
+if (hintEl) {
+  if (matchMedia('(pointer: coarse)').matches) hintEl.textContent = 'tap to hear the soup';
+  // Tidy-up only: the hint is already invisible and click-through by now. A timer
+  // rather than 'animationend' so it still happens where animations never run.
+  setTimeout(() => hintEl.remove(), 7600); // 0.9 s delay + 6.5 s drift, plus slack
+}
 document.addEventListener('visibilitychange', () => {
     if (!audio_started) return;
     const ambient = ['brook', 'fumarole'];
     if (document.hidden) {
         ambient.forEach(id => document.getElementById(id).pause());
     } else {
-        ambient.forEach(id => document.getElementById(id).play());
+        ambient.forEach(id => document.getElementById(id).play().catch(() => {}));
     }
 });
 // END AUDIO

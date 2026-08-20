@@ -53,6 +53,7 @@ Once swallowed, B:
 | `speed` | 1 | Speed multiplier |
 | `coverage` | 0.3 | Fraction of screen area notionally covered by all amoebas combined (0.01 – 2) |
 | `predation` | true | Disable swallowing and growth (`?predation=false`) |
+| `hint` | — | Skip the opening autoplay attempt so the click-for-sound nudge is shown (`?hint`) |
 
 Example: `?n=30&speed=0.5&coverage=0.4&predation=false`
 
