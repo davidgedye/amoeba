@@ -1,4 +1,4 @@
-const CACHE_NAME = 'amoeba-v22';
+const CACHE_NAME = 'amoeba-v23';
 const ASSETS = [
   './index.html', './manifest.json', './icon.svg',
   // Audio must be cached too: uncached, the first play() waits on ~2.8 MB of
