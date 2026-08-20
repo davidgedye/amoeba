@@ -28,11 +28,20 @@ const ENDGAME_FLASH = 3;   // seconds of edge-flashing before ejection
 const ENDGAME_EJECT = 3;   // seconds over which all captives are ejected one by one
 const ENDGAME_DRIFT = 5;   // seconds of free drift before predation resumes
 
+// Pure-theatre predation tuning (see theatrics() below)
+const EAT_RATIO     = 0.6; // one amoeba only reacts to another this much smaller / larger than itself
+const NOTICE        = 3.0; // x the predator's radius - the distance at which the pair notice each other
+const LUNGE_SPEED   = 4.5; // x base speed for the dart
+const STARTLE_SPEED = 3.0; // x base speed for the flee; enough to stay ahead of a big pursuer past 1 s
+const REST          = 4;   // s an amoeba lies up after a meal or a fright (randomised +/-30%)
+const ACCEL_REF     = 8;   // per s - speed-lag rate for a reference-sized amoeba; scaled by 1/area in update()
+
 const params    = new URLSearchParams(location.search);
 const INIT_N    = Math.max(1, Math.min(200, parseInt(params.get('n'), 10) || 30));
-const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 1));
+const SPEED_MUL = Math.max(0.1, Math.min(20, parseFloat(params.get('speed')) || 0.7));
 const COVERAGE  = Math.max(0.01, Math.min(2, parseFloat(params.get('coverage')) || 0.3));
 const PREDATION = params.get('predation') !== 'false';
+
 
 let W, H;
 
@@ -50,6 +59,10 @@ window.addEventListener('resize', resize);
 // flattening their sides and reducing their rendered area below π·r².
 const _avgSqCoeff = 0.04**2 + 0.04*0.16 + 0.16**2/3; // E[(0.04+0.16t)²], t~U[0,1]
 const SIZE_SCALE  = Math.sqrt(COVERAGE * W * H / (INIT_N * Math.PI * Math.min(W,H)**2 * _avgSqCoeff));
+
+// Mid-range radius, used as the reference mass for acceleration. Fixed at load
+// like SIZE_SCALE, so a resize doesn't restate what every amoeba weighs.
+const R_REF = Math.min(W, H) * SIZE_SCALE * 0.12;
 
 function sineNoise(phases, t) {
   let v = 0;
@@ -90,6 +103,12 @@ class Amoeba {
     this.aPhases    = Array.from({ length: P }, () => makePhases(2, 0.12)); // 2 waves, ±0.12 rad angular swing; small to prevent skeleton crossings
     this.turnPhases = makePhases(3, 0.45); // 3 waves driving heading rotation
 
+    this._rest    = Math.random() * REST; // s until it may act again; staggered so nothing fires in unison
+    this._hunting = false; // set by the first dart, cleared only by a meal
+    this._windup = 0;  // s left crouching, after which the dart fires
+    this._excite = 0;  // s of bright outline left; set by predation only, never by throws
+    this._targetSpeed = this._baseSpeed; // speed chases this, at a rate set by mass
+
     this._initialBaseR = this.baseR;
     this.swallowedBy   = null;
     this._capturedDist = 0;
@@ -104,15 +123,41 @@ class Amoeba {
   }
 
   update(dt) {
-    this.age += dt * globalSpeedMult;
+    // Sim-time step. Positions are left on real dt because velocity already
+    // carries SPEED_MUL; everything else here is a rate or a clock, so it scales.
+    const st = dt * globalSpeedMult;
 
-    this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * dt * globalSpeedMult); // ~0.2 s time constant
+    this.age += st;
 
-    if (this.speed > this._baseSpeed) {
-      this.speed += (this._baseSpeed - this.speed) * Math.min(1, 1.5 * dt); // throw speed decays over ~0.7 s
+    this.baseR += (this._growTarget - this.baseR) * Math.min(1, 5 * st); // ~0.2 s time constant
+
+    this._rest   = Math.max(0, this._rest   - st);
+    this._excite = Math.max(0, this._excite - st);
+
+    if (this.swallowedBy) this._windup = 0; // cancel a pounce that got eaten mid-crouch
+
+    if (this._windup > 0) {
+      // Crouch, then dart along whatever heading the crouch left us on. A burst
+      // with no anticipation just reads as drifting slightly faster; the
+      // hesitation is what makes the eye catch it.
+      this._windup -= st;
+      if (this._windup <= 0) burst(this, Math.atan2(this.vy, this.vx), LUNGE_SPEED);
+    } else {
+      // A dart carries further than a throw or a startle, so it fades more slowly.
+      const decay = this._hunting ? 0.9 : 1.5;
+      this._targetSpeed += (this._baseSpeed - this._targetSpeed) * Math.min(1, decay * st);
     }
 
-    const heading = Math.atan2(this.vy, this.vx) + sineNoise(this.turnPhases, this.age * 0.22) * dt;
+    // Speed lags its target with an acceleration inversely proportional to mass
+    // (i.e. to area, r²), so a big amoeba has to heave itself into a lunge while a
+    // small one simply snaps. A first-order lag preserves the integral, so every
+    // amoeba still covers the same ground per dart — only the peak, and how long
+    // it takes to arrive, differ: ~4.4x almost at once at r=25, ~2.9x after 0.6 s
+    // at r=110. Since baseR grows with eating, gorging also makes you ponderous.
+    const accel = ACCEL_REF * (R_REF / this.baseR) ** 2;
+    this.speed += (this._targetSpeed - this.speed) * Math.min(1, accel * st);
+
+    const heading = Math.atan2(this.vy, this.vx) + sineNoise(this.turnPhases, this.age * 0.22) * st;
     this.vx = Math.cos(heading) * this.speed;
     this.vy = Math.sin(heading) * this.speed;
 
@@ -121,7 +166,7 @@ class Amoeba {
 
     if (this.swallowedBy) {
       const sw = this.swallowedBy;
-      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.06 * dt); // leash settles to 35% of captor radius
+      this._capturedDist = Math.max(sw.baseR * 0.35, this._capturedDist - sw.baseR * 0.06 * st); // leash settles to 35% of captor radius
       const dx = this.x - sw.x, dy = this.y - sw.y;
       const dist = Math.hypot(dx, dy);
       if (dist > this._capturedDist && dist > 0) {
@@ -210,8 +255,11 @@ class Amoeba {
       fg.addColorStop(1, `hsla(${this.hue}, 68%, 50%, 0.44)`);
       ctx.fillStyle   = fg;
       ctx.fill(this._path);
-      ctx.strokeStyle = this.strokeFree;
-      ctx.lineWidth   = 2;
+      // Mid-burst amoebas outline brighter - the visual "tell" for a lunge or startle.
+      // Derived from speed alone, so a thrown amoeba flashes too.
+      const excited   = this._excite > 0;
+      ctx.strokeStyle = excited ? `hsla(${this.hue}, 95%, 90%, 0.95)` : this.strokeFree;
+      ctx.lineWidth   = excited ? 3 : 2;
       ctx.stroke(this._path);
     }
   }
@@ -239,12 +287,120 @@ function checkSwallowing() {
           }
         }
         b.swallowedBy    = captor;
+        a._hunting = false;                              // fed at last, so it can lie up
+        a._rest    = REST * (0.7 + Math.random() * 0.6);
         if (audio_started) play('bloop');
         b._capturedDist  = Math.hypot(b.x - captor.x, b.y - captor.y);
         b._growTarget    = b._initialBaseR;  // b shrinks back since its children left
         captor._growTarget = Math.sqrt(captor._growTarget ** 2 + b._initialBaseR ** 2);
         break;
       }
+    }
+  }
+}
+
+// ─── PURE-THEATRE PREDATION ───────────────────────────────────────────────────
+// Nothing is ever steered toward or away from anything over time. There is no
+// attraction or repulsion field, so no clustering or corner-pileup dynamics can
+// emerge — the wandering motion is exactly what it was before. All that is added
+// is two one-shot impulses, each behind a rest timer:
+//
+//   LUNGE   — a predator with prey in range turns to face it, crouches, then
+//             springs. It stays on the hunt from then on, a dart a second, and
+//             rests only once it has actually eaten.
+//   STARTLE — prey bolts into open water, and keeps running for as long as the
+//             threat is in range: the first reaction is a sharp reflex turn, and
+//             after that it steers, rate-limited, toward whatever heading has the
+//             most room ahead. That continuous steering is the one place anything
+//             is repelled from anything, so the open-water test below is what
+//             stands between a hunted amoeba and a corner.
+//
+// Both fade back to a normal drift through the speed decay in update(). Note that
+// a hunt is open-ended: what keeps a dogged hunter from herding prey into a corner
+// is the escape scan below, not any limit on how long it may keep trying.
+
+// Distance from (x,y) to the canvas edge along heading h, so a startle never
+// picks an escape route that runs straight into a wall.
+function roomAhead(x, y, h) {
+  const cx = Math.cos(h), cy = Math.sin(h);
+  let t = Infinity;
+  if (cx >  1e-6) t = Math.min(t, (W - x) / cx);
+  if (cx < -1e-6) t = Math.min(t, -x / cx);
+  if (cy >  1e-6) t = Math.min(t, (H - y) / cy);
+  if (cy < -1e-6) t = Math.min(t, -y / cy);
+  return t;
+}
+
+// Sets the *target* speed only — how fast the amoeba actually gets there is
+// decided by its mass, in update().
+function burst(a, heading, mult) {
+  a._targetSpeed = a._baseSpeed * mult;
+  a.vx = Math.cos(heading) * a.speed;
+  a.vy = Math.sin(heading) * a.speed;
+}
+
+function theatrics(dt) {
+  const st = dt * globalSpeedMult; // flee steering is a rate, so it slows with everything else
+  for (const a of amoebas) {
+    if (a.swallowedBy || a === dragTarget) continue;
+
+    // Nearest thing that could eat me, and nearest thing I could eat. Both use
+    // the predator's radius as the notice distance, so the two spot each other at
+    // the same moment — the crouch is what hands the prey its head start.
+    let threat = null, threatD = Infinity;
+    let prey   = null, preyD   = Infinity;
+    for (const b of amoebas) {
+      if (b === a || b.swallowedBy) continue;
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      if (a.baseR < b.baseR * EAT_RATIO && d < b.baseR * NOTICE && d < threatD) { threat = b; threatD = d; }
+      if (b.baseR < a.baseR * EAT_RATIO && d < a.baseR * NOTICE && d < preyD)   { prey   = b; preyD   = d; }
+    }
+
+    // Fleeing beats feeding.
+    if (threat) {
+      const away = Math.atan2(a.y - threat.y, a.x - threat.x);
+      // Offsets are ordered centre-out and room is capped at six radii, so
+      // straight-away wins whenever it is clear and a sideways break is taken only
+      // when a wall is genuinely nearer that way. This is what stops a startled
+      // amoeba from being flushed into a corner.
+      let best = away, bestRoom = -1;
+      for (const off of [0, 0.55, -0.55, 1.1, -1.1, 1.7, -1.7]) {
+        const room = Math.min(roomAhead(a.x, a.y, away + off), a.baseR * 6);
+        if (room > bestRoom + 1) { bestRoom = room; best = away + off; }
+      }
+      if (a._rest === 0) {
+        // The reflex: snap round and go. _rest only gates this sharp turn, never
+        // the running itself, so it re-triggers every 1.5 s while still hunted.
+        burst(a, best + (Math.random() - 0.5) * 0.5, STARTLE_SPEED);
+        a._rest = 1.5;
+      } else {
+        // Still fleeing: hold the pace and bend toward open water at up to
+        // 3 rad/s, so the escape route keeps updating as the chase moves.
+        const h = Math.atan2(a.vy, a.vx);
+        const d = ((best - h + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+        burst(a, h + Math.max(-3 * st, Math.min(3 * st, d)), STARTLE_SPEED);
+      }
+      a._excite = 1.2;
+      continue;
+    }
+
+    if (a._rest > 0) continue;
+
+    if (prey) {
+      const toPrey = Math.atan2(prey.y - a.y, prey.x - a.x);
+
+      // Turn to face and drop into a crouch; update() springs along this heading
+      // when the crouch ends. Follow-up darts crouch half as long — the opening
+      // pounce is deliberate, the rest of the hunt is snapping.
+      a.vx = Math.cos(toPrey) * a.speed;
+      a.vy = Math.sin(toPrey) * a.speed;
+      a._targetSpeed = a._baseSpeed * 0.3;
+      a._windup = a._hunting ? 0.15 : 0.3;
+      a._excite = a._windup + 1.4;
+      // A hunter presses on, a dart a second, and only lies up once it has fed —
+      // see checkSwallowing(), which is the sole thing that clears _hunting.
+      a._hunting = true;
+      a._rest    = 1;
     }
   }
 }
@@ -307,7 +463,8 @@ canvas.addEventListener('pointerup', () => {
     const throwDt = (last.t - first.t) / 1000;
     if (d > 2 && throwDt > 0) {
       const throwSpd = Math.min(d / throwDt, dragTarget._baseSpeed * 5);
-      dragTarget.speed = throwSpd;
+      dragTarget.speed        = throwSpd; // a throw is external, so it lands instantly
+      dragTarget._targetSpeed = throwSpd;
       dragTarget.vx = (dx / d) * throwSpd;
       dragTarget.vy = (dy / d) * throwSpd;
     }
@@ -322,7 +479,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === '-')             factor = 0.8;
   if (factor) {
     globalSpeedMult *= factor;
-    for (const a of amoebas) { a._baseSpeed *= factor; a.speed *= factor; }
+    for (const a of amoebas) { a._baseSpeed *= factor; a.speed *= factor; a._targetSpeed *= factor; }
   }
 });
 
@@ -341,7 +498,7 @@ function frame(ts) {
     if (endgamePhase === 'idle') {
       const freeCount = amoebas.reduce((n, a) => n + (a.swallowedBy ? 0 : 1), 0);
       if (freeCount === 1 && amoebas.length > 1) { endgamePhase = 'flash'; endgameTimer = 0; }
-      else checkSwallowing();
+      else { checkSwallowing(); theatrics(dt); }
     } else {
       endgameTimer += dt;
       if (endgamePhase === 'flash' && endgameTimer >= ENDGAME_FLASH) {
